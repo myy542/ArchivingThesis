@@ -1,0 +1,91 @@
+/* notification.css */
+.page-header {
+    margin-bottom: 24px;
+}
+.page-header h2 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: #2d3748;
+}
+.notifications-list {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+.notification-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #edf2f7;
+    transition: background 0.2s;
+}
+.notification-item:last-child {
+    border-bottom: none;
+}
+.notification-item.unread {
+    background: #fff5f5;
+}
+.notification-item:hover {
+    background: #fafbfc;
+}
+.notification-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+}
+.notification-content i {
+    font-size: 1.4rem;
+    color: #e53e3e;
+}
+.notification-details p {
+    font-weight: 500;
+    margin-bottom: 4px;
+    color: #2d3748;
+}
+.notification-details .date {
+    font-size: 0.8rem;
+    color: #a0aec0;
+}
+.notification-actions {
+    display: flex;
+    gap: 12px;
+}
+.notification-actions a {
+    font-size: 0.85rem;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.2s;
+}
+.mark-read-btn {
+    background: #c6f6d5;
+    color: #22543d;
+}
+.mark-read-btn:hover {
+    background: #9ae6b4;
+}
+.delete-btn {
+    background: #fed7d7;
+    color: #822727;
+}
+.delete-btn:hover {
+    background: #feb2b2;
+}
+.empty {
+    padding: 40px;
+    text-align: center;
+    color: #a0aec0;
+    font-style: italic;
+}
+@media (max-width: 768px) {
+    .notification-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .notification-actions {
+        align-self: flex-end;
+    }
+}
