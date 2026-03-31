@@ -1,6 +1,6 @@
 <?php
 session_start();
-$is_logged_in = isset($_SESSION['username']);
+$is_logged_in = isset($_SESSION['user_id']) || isset($_SESSION['username']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -18,18 +18,14 @@ $is_logged_in = isset($_SESSION['username']);
             --navy-dark: #020617;
             --gold: #fbbf24;
             --gold-dark: #d97706;
-            --blue: #3b82f6;
             --gray: #64748b;
-            --light-gray: #94a3b8;
-            --text-light: #e2e8f0;
             --card-bg: #ffffff;
             --radius: 12px;
             --shadow: 0 4px 20px rgba(0,0,0,0.08);
             --shadow-hover: 0 12px 36px rgba(251,191,36,0.18);
-            --success: #10b981;
+            --red: #d32f2f;
         }
 
-        /* RESET */
         * {
             margin: 0;
             padding: 0;
@@ -47,7 +43,7 @@ $is_logged_in = isset($_SESSION['username']);
             line-height: 1.6;
         }
 
-        /* ================= NAVBAR ================= */
+        /* Navbar */
         .navbar {
             background: linear-gradient(135deg, #FE4853 0%, #732529 100%);
             color: white;
@@ -56,8 +52,6 @@ $is_logged_in = isset($_SESSION['username']);
             position: sticky;
             top: 0;
             z-index: 1000;
-            display: flex;
-            align-items: center;
         }
 
         .nav-container {
@@ -98,13 +92,12 @@ $is_logged_in = isset($_SESSION['username']);
             opacity: 0.9;
         }
 
-        .nav-links a:hover,
-        .nav-links a.active {
+        .nav-links a:hover {
             opacity: 1;
             transform: translateY(-2px);
         }
 
-        /* ================= HERO SECTION WITH BACKGROUND IMAGE ================= */
+        /* Hero Section */
         .hero {
             position: relative;
             min-height: 100vh;
@@ -114,7 +107,6 @@ $is_logged_in = isset($_SESSION['username']);
             justify-content: center;
             text-align: center;
             color: white;
-            /* BACKGROUND IMAGE - Unsplash library image */
             background-image: linear-gradient(
                 rgba(15, 23, 42, 0.6), 
                 rgba(15, 23, 42, 0.8)
@@ -122,20 +114,7 @@ $is_logged_in = isset($_SESSION['username']);
             background-position: center;
             background-size: cover;
             background-repeat: no-repeat;
-            background-attachment: fixed; /* Parallax effect */
-        }
-
-        /* Optional overlay para mas kita ang text */
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(254, 72, 83, 0.1); /* Very light red overlay */
-            z-index: 1;
-            pointer-events: none;
+            background-attachment: fixed;
         }
 
         .hero-content {
@@ -177,6 +156,7 @@ $is_logged_in = isset($_SESSION['username']);
             text-decoration: none;
             transition: all 0.3s ease;
             font-size: 1.1rem;
+            display: inline-block;
         }
 
         .btn-primary {
@@ -190,62 +170,79 @@ $is_logged_in = isset($_SESSION['username']);
             box-shadow: 0 8px 24px rgba(251,191,36,0.35);
         }
 
-        .btn-outline {
-            border: 2px solid var(--gold);
-            color: var(--gold);
+        /* Features Section */
+        .features {
+            background: #f1f5f9;
+            padding: 4rem 2rem;
+            text-align: center;
         }
 
-        .btn-outline:hover {
-            background: var(--gold);
+        .features h2 {
+            font-size: 2rem;
             color: var(--navy);
+            margin-bottom: 2rem;
         }
 
-        /* ================= STATS SECTION ================= */
-        .stats {
-            max-width: 1400px;
+        .features-grid {
+            max-width: 1200px;
             margin: 0 auto;
-            padding: 5rem 2rem 4rem;
-            display: flex;
-            justify-content: center;
-            gap: 3rem;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
         }
 
-        .stat-box {
-            background: var(--card-bg);
-            padding: 2rem 2.5rem;
+        .feature-card {
+            background: white;
+            padding: 2rem;
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            text-align: center;
             transition: 0.3s;
-            min-width: 220px;
         }
 
-        .stat-box:hover {
-            transform: translateY(-6px);
+        .feature-card:hover {
+            transform: translateY(-5px);
             box-shadow: var(--shadow-hover);
         }
 
-        .stat-box h3 {
-            font-size: 2rem;
+        .feature-card .material-symbols-outlined {
+            font-size: 3rem;
+            color: var(--red);
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.8rem;
             color: var(--navy);
-            margin-bottom: 0.5rem;
         }
 
-        .stat-box p {
+        .feature-card p {
             color: var(--gray);
+            font-size: 0.95rem;
         }
 
-        /* ================= FOOTER ================= */
+        /* Footer */
         footer {
             background: var(--navy-dark);
-            color: var(--text-light);
+            color: #e2e8f0;
             padding: 2rem;
             text-align: center;
-            margin-top: 3rem;
         }
 
-        /* ================= RESPONSIVE ================= */
+        footer p {
+            margin: 0.5rem 0;
+        }
+
+        footer a {
+            color: var(--gold);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
         @media (max-width: 768px) {
             .navbar {
                 padding: 0.8rem 1rem;
@@ -270,19 +267,27 @@ $is_logged_in = isset($_SESSION['username']);
                 font-size: 1.1rem;
             }
 
-            .hero-actions {
-                flex-direction: column;
-                gap: 1rem;
-            }
-
             .btn {
                 width: 100%;
                 max-width: 320px;
             }
 
-            .stats {
+            .features {
                 padding: 3rem 1.5rem;
-                gap: 2rem;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .logo {
+                font-size: 1.4rem;
+            }
+            
+            .logo .material-symbols-outlined {
+                font-size: 1.8rem;
             }
         }
     </style>
@@ -295,10 +300,11 @@ $is_logged_in = isset($_SESSION['username']);
                 Thesis Archiving
             </a>
             <ul class="nav-links">
-                <li><a href="homepage.php" class="active">Home</a></li>
+                <li><a href="homepage.php">Home</a></li>
                 <li><a href="browse.php">Browse</a></li>
+                <li><a href="about.php">About</a></li>
                 <?php if ($is_logged_in): ?>
-                    <li><a href="student-dashboard.php">Dashboard</a></li>
+                    <li><a href="../student/studentDashboard.php">Dashboard</a></li>
                     <li><a href="logout.php">Logout</a></li>
                 <?php else: ?>
                     <li><a href="login.php">Login</a></li>
@@ -310,12 +316,44 @@ $is_logged_in = isset($_SESSION['username']);
     
     <section class="hero">
         <div class="hero-content">
-            <h1>Web-Based Thesis Archiving System</h1>
+            <h1>Web-Based Thesis<br>Archiving System</h1>
             <p>Discover, browse, and preserve academic research. Your gateway to scholarly knowledge.</p>
             <div class="hero-actions">
                 <a href="browse.php" class="btn btn-primary">Browse Theses</a>
             </div>
         </div>
     </section>
+
+    <section class="features">
+        <h2>Why Choose Our Platform?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <span class="material-symbols-outlined">search</span>
+                <h3>Easy Search</h3>
+                <p>Find theses quickly with our advanced search and filter system.</p>
+            </div>
+            <div class="feature-card">
+                <span class="material-symbols-outlined">download</span>
+                <h3>Download Access</h3>
+                <p>Download full thesis documents for your research.</p>
+            </div>
+            <div class="feature-card">
+                <span class="material-symbols-outlined">archive</span>
+                <h3>Secure Archive</h3>
+                <p>All theses are securely stored and preserved for future reference.</p>
+            </div>
+            <div class="feature-card">
+                <span class="material-symbols-outlined">category</span>
+                <h3>Organized by Category</h3>
+                <p>Browse by department, year, or research topic.</p>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>© <?= date('Y') ?> Web-Based Thesis Archiving System</p>
+        <p>Preserving Knowledge, Empowering Research</p>
+        <p><a href="about.php">About Us</a> | <a href="contact.php">Contact</a> | <a href="privacy.php">Privacy Policy</a></p>
+    </footer>
 </body>
 </html>

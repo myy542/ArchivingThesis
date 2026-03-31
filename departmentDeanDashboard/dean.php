@@ -18,7 +18,10 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
-// GET USER DATA FROM DATABASE - REMOVED created_at
+// GET ACTIVE SECTION FROM URL
+$section = isset($_GET['section']) ? $_GET['section'] : 'dashboard';
+
+// GET USER DATA FROM DATABASE
 $user_query = "SELECT user_id, username, email, first_name, last_name, role_id, status FROM user_table WHERE user_id = ?";
 $user_stmt = $conn->prepare($user_query);
 $user_stmt->bind_param("i", $user_id);
@@ -132,7 +135,7 @@ if ($stats['theses_approved'] == 0) $stats['theses_approved'] = 23;
 
 // GET FACULTY MEMBERS
 $faculty_members = [];
-$faculty_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 3 AND status = 'Active' ORDER BY first_name ASC LIMIT 6";
+$faculty_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 3 AND status = 'Active' ORDER BY first_name ASC";
 $faculty_result = $conn->query($faculty_query);
 if ($faculty_result && $faculty_result->num_rows > 0) {
     while ($row = $faculty_result->fetch_assoc()) {
@@ -167,16 +170,55 @@ if (empty($faculty_members)) {
         ['id' => 1, 'name' => 'Prof. Juan Dela Cruz', 'specialization' => 'Computer Science', 'projects_supervised' => 8, 'status' => 'active'],
         ['id' => 2, 'name' => 'Dr. Ana Lopez', 'specialization' => 'Mathematics', 'projects_supervised' => 6, 'status' => 'active'],
         ['id' => 3, 'name' => 'Prof. Pedro Reyes', 'specialization' => 'Physics', 'projects_supervised' => 4, 'status' => 'active'],
-        ['id' => 4, 'name' => 'Dr. Lisa Garcia', 'specialization' => 'Chemistry', 'projects_supervised' => 5, 'status' => 'on-leave'],
+        ['id' => 4, 'name' => 'Dr. Lisa Garcia', 'specialization' => 'Chemistry', 'projects_supervised' => 5, 'status' => 'active'],
         ['id' => 5, 'name' => 'Prof. Mark Santiago', 'specialization' => 'Biology', 'projects_supervised' => 7, 'status' => 'active'],
         ['id' => 6, 'name' => 'Dr. Karen Villanueva', 'specialization' => 'Literature', 'projects_supervised' => 3, 'status' => 'active'],
+    ];
+}
+
+// GET STUDENTS
+$students_list = [];
+$students_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 2 ORDER BY first_name ASC";
+$students_result = $conn->query($students_query);
+if ($students_result && $students_result->num_rows > 0) {
+    while ($row = $students_result->fetch_assoc()) {
+        $theses_count = 0;
+        if ($theses_table_exists) {
+            $theses_stmt = $conn->prepare("SELECT COUNT(*) as count FROM theses WHERE student_id = ?");
+            $theses_stmt->bind_param("i", $row['user_id']);
+            $theses_stmt->execute();
+            $theses_result = $theses_stmt->get_result();
+            if ($theses_row = $theses_result->fetch_assoc()) {
+                $theses_count = $theses_row['count'];
+            }
+            $theses_stmt->close();
+        }
+        
+        $students_list[] = [
+            'id' => $row['user_id'],
+            'name' => $row['first_name'] . " " . $row['last_name'],
+            'email' => $row['email'],
+            'theses_count' => $theses_count,
+            'status' => $row['status']
+        ];
+    }
+}
+
+// If no students found, use sample data
+if (empty($students_list)) {
+    $students_list = [
+        ['id' => 1, 'name' => 'Maria Santos', 'email' => 'maria.santos@univ.edu', 'theses_count' => 1, 'status' => 'Active'],
+        ['id' => 2, 'name' => 'Juan Dela Cruz', 'email' => 'juan.dela@univ.edu', 'theses_count' => 1, 'status' => 'Active'],
+        ['id' => 3, 'name' => 'Ana Reyes', 'email' => 'ana.reyes@univ.edu', 'theses_count' => 1, 'status' => 'Active'],
+        ['id' => 4, 'name' => 'Carlos Garcia', 'email' => 'carlos.garcia@univ.edu', 'theses_count' => 0, 'status' => 'Inactive'],
+        ['id' => 5, 'name' => 'Lisa Fernandez', 'email' => 'lisa.fernandez@univ.edu', 'theses_count' => 1, 'status' => 'Active'],
     ];
 }
 
 // GET DEPARTMENT PROJECTS
 $department_projects = [];
 if ($theses_table_exists) {
-    $projects_query = "SELECT thesis_id, title, student_name, adviser_name, created_at, status, defense_date FROM theses ORDER BY created_at DESC LIMIT 5";
+    $projects_query = "SELECT thesis_id, title, student_name, adviser_name, created_at, status, defense_date FROM theses ORDER BY created_at DESC LIMIT 10";
     $projects_result = $conn->query($projects_query);
     if ($projects_result && $projects_result->num_rows > 0) {
         while ($row = $projects_result->fetch_assoc()) {
@@ -201,8 +243,14 @@ if (empty($department_projects)) {
         ['id' => 3, 'title' => 'E-Learning Platform for Mathematics', 'student' => 'Ana Lopez', 'adviser' => 'Prof. Pedro Reyes', 'submitted' => date('M d, Y', strtotime('-2 days')), 'status' => 'completed', 'defense_date' => date('Y-m-d', strtotime('-5 days'))],
         ['id' => 4, 'title' => 'IoT-Based Classroom Monitoring', 'student' => 'Pedro Reyes', 'adviser' => 'Dr. Lisa Garcia', 'submitted' => date('M d, Y', strtotime('-3 days')), 'status' => 'pending', 'defense_date' => null],
         ['id' => 5, 'title' => 'Blockchain for Student Records', 'student' => 'Lisa Garcia', 'adviser' => 'Prof. Mark Santiago', 'submitted' => date('M d, Y', strtotime('-5 days')), 'status' => 'archived', 'defense_date' => date('Y-m-d', strtotime('-10 days'))],
+        ['id' => 6, 'title' => 'Virtual Reality Campus Tour', 'student' => 'Mark Santiago', 'adviser' => 'Dr. Karen Villanueva', 'submitted' => date('M d, Y', strtotime('-7 days')), 'status' => 'approved', 'defense_date' => date('Y-m-d', strtotime('+2 weeks'))],
     ];
 }
+
+// GET ARCHIVED PROJECTS
+$archived_projects = array_filter($department_projects, function($p) {
+    return $p['status'] == 'archived';
+});
 
 // GET UPCOMING DEFENSES
 $upcoming_defenses = [];
@@ -234,82 +282,32 @@ if (empty($upcoming_defenses)) {
 }
 
 // GET RECENT ACTIVITIES
-$department_activities = [];
-$check_activities = $conn->query("SHOW TABLES LIKE 'user_activities'");
-if ($check_activities && $check_activities->num_rows > 0) {
-    $activities_query = "SELECT * FROM user_activities ORDER BY created_at DESC LIMIT 6";
-    $activities_result = $conn->query($activities_query);
-    if ($activities_result && $activities_result->num_rows > 0) {
-        while ($activity = $activities_result->fetch_assoc()) {
-            $department_activities[] = [
-                'icon' => 'check-circle',
-                'description' => $activity['description'],
-                'user' => $activity['user_name'] ?? 'System',
-                'created_at' => date('M d, Y h:i A', strtotime($activity['created_at']))
-            ];
-        }
-    }
-}
-
-// If no activities found, use sample data
-if (empty($department_activities)) {
-    $department_activities = [
-        ['icon' => 'check-circle', 'description' => 'Thesis proposal approved: "AI-Powered System"', 'user' => 'Prof. Juan Dela Cruz', 'created_at' => date('M d, Y h:i A')],
-        ['icon' => 'calendar-check', 'description' => 'Defense scheduled for "Mobile App" project', 'user' => 'Dr. Ana Lopez', 'created_at' => date('M d, Y h:i A', strtotime('-1 hour'))],
-        ['icon' => 'file-pdf', 'description' => 'Monthly department report generated', 'user' => 'System', 'created_at' => date('M d, Y h:i A', strtotime('-2 hours'))],
-        ['icon' => 'user-graduate', 'description' => 'New student registered in department', 'user' => 'Maria Santos', 'created_at' => date('M d, Y h:i A', strtotime('-1 day'))],
-        ['icon' => 'comment', 'description' => 'Feedback submitted for "IoT-Based Classroom"', 'user' => 'Dr. Lisa Garcia', 'created_at' => date('M d, Y h:i A', strtotime('-2 days'))],
-        ['icon' => 'award', 'description' => 'Project "E-Learning Platform" completed', 'user' => 'Prof. Pedro Reyes', 'created_at' => date('M d, Y h:i A', strtotime('-3 days'))],
-    ];
-}
+$department_activities = [
+    ['icon' => 'check-circle', 'description' => 'Thesis proposal approved: "AI-Powered System"', 'user' => 'Prof. Juan Dela Cruz', 'created_at' => date('M d, Y h:i A')],
+    ['icon' => 'calendar-check', 'description' => 'Defense scheduled for "Mobile App" project', 'user' => 'Dr. Ana Lopez', 'created_at' => date('M d, Y h:i A', strtotime('-1 hour'))],
+    ['icon' => 'file-pdf', 'description' => 'Monthly department report generated', 'user' => 'System', 'created_at' => date('M d, Y h:i A', strtotime('-2 hours'))],
+    ['icon' => 'user-graduate', 'description' => 'New student registered in department', 'user' => 'Maria Santos', 'created_at' => date('M d, Y h:i A', strtotime('-1 day'))],
+    ['icon' => 'comment', 'description' => 'Feedback submitted for "IoT-Based Classroom"', 'user' => 'Dr. Lisa Garcia', 'created_at' => date('M d, Y h:i A', strtotime('-2 days'))],
+    ['icon' => 'award', 'description' => 'Project "E-Learning Platform" completed', 'user' => 'Prof. Pedro Reyes', 'created_at' => date('M d, Y h:i A', strtotime('-3 days'))],
+];
 
 // FACULTY WORKLOAD DATA FOR CHART
 $workload_labels = [];
 $workload_data = [];
-if ($theses_table_exists) {
-    $workload_query = "SELECT u.user_id, CONCAT(u.first_name, ' ', u.last_name) as name, COUNT(t.thesis_id) as workload 
-                       FROM user_table u 
-                       LEFT JOIN theses t ON t.faculty_adviser_id = u.user_id 
-                       WHERE u.role_id = 3 AND u.status = 'Active' 
-                       GROUP BY u.user_id 
-                       ORDER BY workload DESC 
-                       LIMIT 5";
-    $workload_result = $conn->query($workload_query);
-    if ($workload_result && $workload_result->num_rows > 0) {
-        while ($row = $workload_result->fetch_assoc()) {
-            $workload_labels[] = $row['name'];
-            $workload_data[] = $row['workload'];
-        }
-    }
-}
-
-// If no workload data, use sample
-if (empty($workload_labels)) {
-    $workload_labels = ['Prof. Dela Cruz', 'Dr. Lopez', 'Prof. Reyes', 'Dr. Garcia', 'Prof. Santiago', 'Dr. Villanueva'];
-    $workload_data = [8, 6, 4, 5, 7, 3];
-}
-
-// FACULTY WORKLOAD STATS
-$workload_stats = [
-    'max_supervised' => !empty($workload_data) ? max($workload_data) : 8,
-    'avg_supervised' => !empty($workload_data) ? round(array_sum($workload_data) / count($workload_data), 1) : 5.5,
-    'under_load' => 0,
-    'over_load' => 0
-];
-
-foreach ($workload_data as $w) {
-    if ($w < 3) $workload_stats['under_load']++;
-    if ($w > 6) $workload_stats['over_load']++;
+foreach ($faculty_members as $faculty) {
+    $workload_labels[] = explode(' ', $faculty['name'])[0];
+    $workload_data[] = $faculty['projects_supervised'];
 }
 
 $pageTitle = "Department Dean Dashboard";
+$currentPage = basename($_SERVER['PHP_SELF']);
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title><?= htmlspecialchars($pageTitle) ?> | Thesis Management System</title>
     
     <!-- Google Fonts -->
@@ -325,19 +323,17 @@ $pageTitle = "Department Dean Dashboard";
     <link rel="stylesheet" href="css/deanDashboard.css">
 </head>
 <body>
-    <!-- Overlay for sidebar -->
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    <!-- Top Navigation Bar -->
     <header class="top-nav">
         <div class="nav-left">
-            <button class="hamburger" id="hamburgerBtn" aria-label="Menu">
+            <button class="hamburger" id="hamburgerBtn">
                 <span></span><span></span><span></span>
             </button>
             <div class="logo">Thesis<span>Manager</span></div>
             <div class="search-area">
                 <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search faculty, students, projects...">
+                <input type="text" placeholder="Search...">
             </div>
         </div>
         <div class="nav-right">
@@ -362,7 +358,6 @@ $pageTitle = "Department Dean Dashboard";
         </div>
     </header>
 
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
         <div class="logo-container">
             <div class="logo">Thesis<span>Manager</span></div>
@@ -370,37 +365,37 @@ $pageTitle = "Department Dean Dashboard";
         </div>
         
         <div class="nav-menu">
-            <a href="dean.php" class="nav-item active">
+            <a href="dean.php?section=dashboard" class="nav-item <?= $section == 'dashboard' ? 'active' : '' ?>">
                 <i class="fas fa-th-large"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=department" class="nav-item <?= $section == 'department' ? 'active' : '' ?>">
+                <i class="fas fa-building"></i>
+                <span>Department</span>
+            </a>
+            <a href="dean.php?section=faculty" class="nav-item <?= $section == 'faculty' ? 'active' : '' ?>">
                 <i class="fas fa-users"></i>
                 <span>Faculty</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=students" class="nav-item <?= $section == 'students' ? 'active' : '' ?>">
                 <i class="fas fa-user-graduate"></i>
                 <span>Students</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=projects" class="nav-item <?= $section == 'projects' ? 'active' : '' ?>">
                 <i class="fas fa-project-diagram"></i>
                 <span>Projects</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=defenses" class="nav-item <?= $section == 'defenses' ? 'active' : '' ?>">
                 <i class="fas fa-calendar-check"></i>
                 <span>Defenses</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=archive" class="nav-item <?= $section == 'archive' ? 'active' : '' ?>">
                 <i class="fas fa-archive"></i>
                 <span>Archive</span>
             </a>
-            <a href="#" class="nav-item">
+            <a href="dean.php?section=reports" class="nav-item <?= $section == 'reports' ? 'active' : '' ?>">
                 <i class="fas fa-chart-bar"></i>
                 <span>Reports</span>
-            </a>
-            <a href="#" class="nav-item">
-                <i class="fas fa-cog"></i>
-                <span>Settings</span>
             </a>
         </div>
         
@@ -410,7 +405,6 @@ $pageTitle = "Department Dean Dashboard";
                 <label for="darkmode" class="toggle-label">
                     <i class="fas fa-sun"></i>
                     <i class="fas fa-moon"></i>
-                    <span class="slider"></span>
                 </label>
             </div>
             <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn">
@@ -420,9 +414,9 @@ $pageTitle = "Department Dean Dashboard";
         </div>
     </aside>
 
-    <!-- MAIN CONTENT -->
     <main class="main-content">
-        <!-- DEPARTMENT INFO BANNER -->
+        <?php if ($section == 'dashboard'): ?>
+        <!-- DASHBOARD VIEW -->
         <div class="dept-banner">
             <div class="dept-info">
                 <h1><?= htmlspecialchars($department) ?></h1>
@@ -434,7 +428,6 @@ $pageTitle = "Department Dean Dashboard";
             </div>
         </div>
 
-        <!-- STATS CARDS - Row 1 -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon"><i class="fas fa-user-graduate"></i></div>
@@ -458,7 +451,7 @@ $pageTitle = "Department Dean Dashboard";
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon secondary"><i class="fas fa-clock"></i></div>
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
                 <div class="stat-details">
                     <h3><?= number_format($stats['pending_reviews']) ?></h3>
                     <p>Pending Reviews</p>
@@ -466,7 +459,6 @@ $pageTitle = "Department Dean Dashboard";
             </div>
         </div>
 
-        <!-- Department Stats - Row 2 -->
         <div class="dept-stats">
             <div class="dept-stat-card">
                 <div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div>
@@ -490,7 +482,6 @@ $pageTitle = "Department Dean Dashboard";
             </div>
         </div>
 
-        <!-- CHARTS SECTION -->
         <div class="charts-section">
             <div class="chart-card">
                 <div class="chart-header"><h3>Project Status Distribution</h3></div>
@@ -499,27 +490,20 @@ $pageTitle = "Department Dean Dashboard";
                 </div>
             </div>
             <div class="chart-card">
-                <div class="chart-header">
-                    <h3>Faculty Workload</h3>
-                    <select id="workloadSelect">
-                        <option>This Semester</option>
-                        <option>Last Semester</option>
-                    </select>
-                </div>
+                <div class="chart-header"><h3>Faculty Workload</h3></div>
                 <div class="chart-container">
                     <canvas id="workloadChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <!-- FACULTY SECTION -->
         <div class="faculty-section">
             <div class="section-header">
-                <h2 class="section-title">Department Faculty</h2>
-                <a href="#" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
+                <h2 class="section-title"><i class="fas fa-users"></i> Department Faculty</h2>
+                <a href="dean.php?section=faculty" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="faculty-grid">
-                <?php foreach (array_slice($faculty_members, 0, 6) as $faculty): ?>
+                <?php foreach (array_slice($faculty_members, 0, 4) as $faculty): ?>
                 <div class="faculty-card">
                     <div class="faculty-header">
                         <div class="faculty-avatar"><?= strtoupper(substr($faculty['name'], 0, 1) . substr(explode(' ', $faculty['name'])[1] ?? '', 0, 1)) ?></div>
@@ -543,41 +527,36 @@ $pageTitle = "Department Dean Dashboard";
             </div>
         </div>
 
-        <!-- RECENT PROJECTS -->
         <div class="projects-section">
             <div class="section-header">
-                <h2 class="section-title">Recent Department Projects</h2>
-                <a href="#" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
+                <h2 class="section-title"><i class="fas fa-project-diagram"></i> Recent Department Projects</h2>
+                <a href="dean.php?section=projects" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="table-responsive">
                 <table class="theses-table">
                     <thead>
-                        <tr>
-                            <th>PROJECT TITLE</th><th>STUDENT</th><th>ADVISER</th><th>DEFENSE DATE</th><th>STATUS</th><th>ACTION</th>
-                        </thead>
+                        <tr><th>PROJECT TITLE</th><th>STUDENT</th><th>ADVISER</th><th>STATUS</th><th>ACTION</th></thead>
                     <tbody>
-                        <?php foreach (array_slice($department_projects, 0, 5) as $project): ?>
-                         <tr>
-                            <td><?= htmlspecialchars($project['title']) ?>\\
-                            <td><?= htmlspecialchars($project['student']) ?>\\
-                            <td><?= htmlspecialchars($project['adviser']) ?>\\
-                            <td><?= $project['defense_date'] ? date('M d, Y', strtotime($project['defense_date'])) : 'Not scheduled' ?>\\
-                            <td><div class="status"><span class="status-dot <?= $project['status'] ?>"></span><span class="status-text"><?= ucfirst(str_replace('-', ' ', $project['status'])) ?></span></div>\\
-                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a>\\
-                           </tr>
+                        <?php foreach (array_slice($department_projects, 0, 4) as $project): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($project['title']) ?></td>
+                            <td><?= htmlspecialchars($project['student']) ?></td>
+                            <td><?= htmlspecialchars($project['adviser']) ?></td>
+                            <td><div class="status"><span class="status-dot <?= $project['status'] ?>"></span><span><?= ucfirst(str_replace('-', ' ', $project['status'])) ?></span></div></td>
+                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
                         <?php endforeach; ?>
                     </tbody>
-                 </table>
+                </table>
             </div>
         </div>
 
-        <!-- UPCOMING DEFENSES -->
         <div class="defenses-section">
             <div class="section-header">
-                <h2 class="section-title">Upcoming Thesis Defenses</h2>
-                <a href="#" class="view-all">Schedule New <i class="fas fa-plus"></i></a>
+                <h2 class="section-title"><i class="fas fa-calendar-check"></i> Upcoming Thesis Defenses</h2>
+                <a href="dean.php?section=defenses" class="view-all">Schedule New <i class="fas fa-plus"></i></a>
             </div>
-            <?php foreach ($upcoming_defenses as $defense): ?>
+            <?php foreach (array_slice($upcoming_defenses, 0, 3) as $defense): ?>
             <div class="defense-item">
                 <div class="defense-date-box">
                     <div class="defense-day"><?= date('d', strtotime($defense['date'])) ?></div>
@@ -585,10 +564,7 @@ $pageTitle = "Department Dean Dashboard";
                 </div>
                 <div class="defense-details">
                     <div class="defense-title"><?= htmlspecialchars($defense['title']) ?></div>
-                    <div class="defense-meta">
-                        <span><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($defense['student']) ?></span>
-                        <span><i class="far fa-clock"></i> <?= $defense['time'] ?></span>
-                    </div>
+                    <div class="defense-meta"><span><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($defense['student']) ?></span><span><i class="far fa-clock"></i> <?= $defense['time'] ?></span></div>
                     <div class="defense-panel"><i class="fas fa-users"></i> Panel: <?= htmlspecialchars($defense['panelists']) ?></div>
                 </div>
                 <a href="#" class="btn-view"><i class="fas fa-calendar-check"></i> Details</a>
@@ -596,52 +572,162 @@ $pageTitle = "Department Dean Dashboard";
             <?php endforeach; ?>
         </div>
 
-        <!-- BOTTOM GRID -->
         <div class="bottom-grid">
             <div class="activities-section">
-                <div class="section-header">
-                    <h2 class="section-title">Department Activities</h2>
-                    <a href="#" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
-                </div>
+                <div class="section-header"><h2 class="section-title"><i class="fas fa-history"></i> Department Activities</h2><a href="#" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
                 <div class="activities-list">
-                    <?php foreach (array_slice($department_activities, 0, 5) as $activity): ?>
+                    <?php foreach (array_slice($department_activities, 0, 4) as $activity): ?>
                     <div class="activity-item">
                         <div class="activity-icon"><i class="fas fa-<?= $activity['icon'] ?>"></i></div>
                         <div class="activity-details">
                             <div class="activity-text"><?= htmlspecialchars($activity['description']) ?></div>
-                            <div class="activity-meta">
-                                <span><i class="far fa-clock"></i> <?= $activity['created_at'] ?></span>
-                                <span class="activity-user"><i class="fas fa-user"></i> <?= htmlspecialchars($activity['user']) ?></span>
-                            </div>
+                            <div class="activity-meta"><span><i class="far fa-clock"></i> <?= $activity['created_at'] ?></span><span><i class="fas fa-user"></i> <?= htmlspecialchars($activity['user']) ?></span></div>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
             </div>
             <div class="workload-section">
-                <div class="section-header">
-                    <h2 class="section-title">Faculty Workload Summary</h2>
-                    <a href="#" class="view-all">Details <i class="fas fa-arrow-right"></i></a>
-                </div>
-                <div class="workload-item"><span class="workload-label">Average Projects per Faculty</span><span class="workload-value"><?= $workload_stats['avg_supervised'] ?></span></div>
-                <div class="workload-item"><span class="workload-label">Maximum Projects Supervised</span><span class="workload-value"><?= $workload_stats['max_supervised'] ?></span></div>
-                <div class="workload-item"><span class="workload-label">Faculty Under Load (&lt; 3 projects)</span><span class="workload-value"><?= $workload_stats['under_load'] ?></span></div>
-                <div class="workload-item"><span class="workload-label">Faculty Over Load (&gt; 6 projects)</span><span class="workload-value"><?= $workload_stats['over_load'] ?></span></div>
-                <div style="margin-top: 20px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;"><span class="workload-label">Workload Distribution</span><span class="workload-value">70%</span></div>
-                    <div class="progress-bar"><div class="progress-fill" style="width: 70%;"></div></div>
-                </div>
+                <div class="section-header"><h2 class="section-title"><i class="fas fa-chart-line"></i> Faculty Workload Summary</h2><a href="#" class="view-all">Details <i class="fas fa-arrow-right"></i></a></div>
+                <div class="workload-item"><span class="workload-label">Average Projects per Faculty</span><span class="workload-value"><?= round(array_sum($workload_data) / max(1, count($workload_data)), 1) ?></span></div>
+                <div class="workload-item"><span class="workload-label">Maximum Projects Supervised</span><span class="workload-value"><?= max($workload_data) ?></span></div>
+                <div class="workload-item"><span class="workload-label">Faculty Under Load (&lt; 3 projects)</span><span class="workload-value"><?= count(array_filter($workload_data, function($w) { return $w < 3; })) ?></span></div>
+                <div class="workload-item"><span class="workload-label">Faculty Over Load (&gt; 6 projects)</span><span class="workload-value"><?= count(array_filter($workload_data, function($w) { return $w > 6; })) ?></span></div>
             </div>
         </div>
 
-        <!-- QUICK ACTIONS -->
         <div class="quick-actions">
-            <a href="#" class="quick-action-btn"><i class="fas fa-calendar-plus"></i><span>Schedule Defense</span></a>
-            <a href="#" class="quick-action-btn"><i class="fas fa-file-pdf"></i><span>Department Report</span></a>
-            <a href="#" class="quick-action-btn"><i class="fas fa-chart-line"></i><span>View Analytics</span></a>
-            <a href="#" class="quick-action-btn"><i class="fas fa-user-plus"></i><span>Add Faculty</span></a>
-            <a href="#" class="quick-action-btn"><i class="fas fa-envelope"></i><span>Announcement</span></a>
+            <a href="#" class="quick-action-btn"><i class="fas fa-calendar-plus"></i> Schedule Defense</a>
+            <a href="#" class="quick-action-btn"><i class="fas fa-file-pdf"></i> Department Report</a>
+            <a href="#" class="quick-action-btn"><i class="fas fa-chart-line"></i> View Analytics</a>
+            <a href="#" class="quick-action-btn"><i class="fas fa-user-plus"></i> Add Faculty</a>
         </div>
+
+        <?php elseif ($section == 'faculty'): ?>
+        <!-- FACULTY VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Department Faculty</h1><p>List of faculty members and their supervision details</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="faculty-section" style="margin-top: 0;">
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-users"></i> All Faculty Members (<?= count($faculty_members) ?>)</h2></div>
+            <div class="faculty-grid">
+                <?php foreach ($faculty_members as $faculty): ?>
+                <div class="faculty-card">
+                    <div class="faculty-header"><div class="faculty-avatar"><?= strtoupper(substr($faculty['name'], 0, 1) . substr(explode(' ', $faculty['name'])[1] ?? '', 0, 1)) ?></div><div><div class="faculty-name"><?= htmlspecialchars($faculty['name']) ?></div><div class="faculty-spec"><?= htmlspecialchars($faculty['specialization']) ?></div></div></div>
+                    <div class="faculty-stats"><div class="faculty-stat"><div class="faculty-stat-value"><?= $faculty['projects_supervised'] ?></div><div class="faculty-stat-label">Projects</div></div><div class="faculty-stat"><div class="faculty-stat-value"><span class="status-badge <?= $faculty['status'] ?>"><?= ucfirst($faculty['status']) ?></span></div><div class="faculty-stat-label">Status</div></div></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+
+        <?php elseif ($section == 'students'): ?>
+        <!-- STUDENTS VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Department Students</h1><p>List of students and their thesis progress</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="students-section" style="margin-top: 0;">
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-user-graduate"></i> All Students (<?= count($students_list) ?>)</h2></div>
+            <div class="table-responsive">
+                <table class="students-table">
+                    <thead><tr><th>Student Name</th><th>Email</th><th>Theses Count</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($students_list as $student): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($student['name']) ?></td>
+                            <td><?= htmlspecialchars($student['email']) ?></td>
+                            <td><?= $student['theses_count'] ?></td>
+                            <td><span class="status-badge <?= $student['status'] ?>"><?= $student['status'] ?></span></td>
+                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <?php elseif ($section == 'projects'): ?>
+        <!-- PROJECTS VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Department Projects</h1><p>List of all thesis projects in the department</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="projects-section" style="margin-top: 0;">
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-project-diagram"></i> All Projects (<?= count($department_projects) ?>)</h2></div>
+            <div class="table-responsive">
+                <table class="theses-table">
+                    <thead><tr><th>Project Title</th><th>Student</th><th>Adviser</th><th>Status</th><th>Defense Date</th><th>Action</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($department_projects as $project): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($project['title']) ?></td>
+                            <td><?= htmlspecialchars($project['student']) ?></td>
+                            <td><?= htmlspecialchars($project['adviser']) ?></td>
+                            <td><div class="status"><span class="status-dot <?= $project['status'] ?>"></span><span><?= ucfirst(str_replace('-', ' ', $project['status'])) ?></span></div></td>
+                            <td><?= $project['defense_date'] ? date('M d, Y', strtotime($project['defense_date'])) : 'Not scheduled' ?></td>
+                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <?php elseif ($section == 'defenses'): ?>
+        <!-- DEFENSES VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Upcoming Thesis Defenses</h1><p>Schedule and track thesis defenses</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="defenses-section" style="margin-top: 0;">
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-calendar-check"></i> Upcoming Defenses (<?= count($upcoming_defenses) ?>)</h2><a href="#" class="view-all">Schedule New <i class="fas fa-plus"></i></a></div>
+            <?php foreach ($upcoming_defenses as $defense): ?>
+            <div class="defense-item">
+                <div class="defense-date-box"><div class="defense-day"><?= date('d', strtotime($defense['date'])) ?></div><div class="defense-month"><?= date('M', strtotime($defense['date'])) ?></div></div>
+                <div class="defense-details"><div class="defense-title"><?= htmlspecialchars($defense['title']) ?></div><div class="defense-meta"><span><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($defense['student']) ?></span><span><i class="far fa-clock"></i> <?= $defense['time'] ?></span></div><div class="defense-panel"><i class="fas fa-users"></i> Panel: <?= htmlspecialchars($defense['panelists']) ?></div></div>
+                <a href="#" class="btn-view"><i class="fas fa-calendar-check"></i> Details</a>
+            </div>
+            <?php endforeach; ?>
+        </div>
+
+        <?php elseif ($section == 'archive'): ?>
+        <!-- ARCHIVE VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Archived Theses</h1><p>Completed and archived thesis projects</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="projects-section" style="margin-top: 0;">
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-archive"></i> Archived Projects (<?= count($archived_projects) ?>)</h2></div>
+            <div class="table-responsive">
+                <table class="theses-table">
+                    <thead><tr><th>Project Title</th><th>Student</th><th>Adviser</th><th>Status</th><th>Defense Date</th><th>Action</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($archived_projects as $project): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($project['title']) ?></td>
+                            <td><?= htmlspecialchars($project['student']) ?></td>
+                            <td><?= htmlspecialchars($project['adviser']) ?></td>
+                            <td><div class="status"><span class="status-dot archived"></span><span>Archived</span></div></td>
+                            <td><?= $project['defense_date'] ? date('M d, Y', strtotime($project['defense_date'])) : 'Not scheduled' ?></td>
+                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <?php elseif ($section == 'reports'): ?>
+        <!-- REPORTS VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1>Department Reports</h1><p>Generate and view department statistics</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="charts-section" style="margin-bottom: 24px;">
+            <div class="chart-card"><div class="chart-header"><h3>Project Status Distribution</h3></div><div class="chart-container"><canvas id="reportStatusChart"></canvas></div></div>
+            <div class="chart-card"><div class="chart-header"><h3>Faculty Workload Distribution</h3></div><div class="chart-container"><canvas id="reportWorkloadChart"></canvas></div></div>
+        </div>
+        <div class="quick-actions"><a href="#" class="quick-action-btn"><i class="fas fa-file-pdf"></i> Export as PDF</a><a href="#" class="quick-action-btn"><i class="fas fa-file-excel"></i> Export as Excel</a><a href="#" class="quick-action-btn"><i class="fas fa-print"></i> Print Report</a></div>
+
+        <?php elseif ($section == 'department'): ?>
+        <!-- DEPARTMENT VIEW -->
+        <div class="dept-banner"><div class="dept-info"><h1><?= htmlspecialchars($department) ?></h1><p>Department overview and statistics</p></div><div class="dean-info"><div class="dean-name"><?= htmlspecialchars($fullName) ?></div><div class="dean-since">Dean since <?= htmlspecialchars($dean_since) ?></div></div></div>
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-user-graduate"></i></div><div class="stat-details"><h3><?= number_format($stats['total_students']) ?></h3><p>Students</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-chalkboard-user"></i></div><div class="stat-details"><h3><?= number_format($stats['total_faculty']) ?></h3><p>Faculty</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-project-diagram"></i></div><div class="stat-details"><h3><?= number_format($stats['total_projects']) ?></h3><p>Total Projects</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-details"><h3><?= number_format($stats['archived_count']) ?></h3><p>Archived</p></div></div>
+        </div>
+        <div class="dept-stats">
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div><div class="dept-stat-value"><?= number_format($stats['completed_projects']) ?></div><div class="dept-stat-label">theses & projects</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-spinner"></i><span>Ongoing</span></div><div class="dept-stat-value"><?= number_format($stats['ongoing_projects']) ?></div><div class="dept-stat-label">active projects</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-gavel"></i><span>Defenses</span></div><div class="dept-stat-value"><?= number_format(count($upcoming_defenses)) ?></div><div class="dept-stat-label">upcoming defenses</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-check-double"></i><span>Approved</span></div><div class="dept-stat-value"><?= number_format($stats['theses_approved']) ?></div><div class="dept-stat-label">theses this sem</div></div>
+        </div>
+        <?php endif; ?>
     </main>
 
     <script>

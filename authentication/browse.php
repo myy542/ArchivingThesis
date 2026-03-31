@@ -902,7 +902,7 @@ if ($deptResult) {
             <ul class="nav-links">
                 <li><a href="../authentication/homepage.php">Home</a></li>
                 <li><a href="browse.php" class="active">Browse Thesis</a></li>
-                <li><a href="../about.php">About</a></li>
+                <li><a href="about.php">About</a></li>
                 <?php if ($is_logged_in): ?>
                     <?php
                     // Get user role to determine dashboard link

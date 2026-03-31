@@ -14,19 +14,53 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
-// Get thesis ID from URL
-$thesis_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-$thesis_title = isset($_GET['title']) ? htmlspecialchars($_GET['title']) : 'Unknown Thesis';
+// GET COORDINATOR DATA
+$department_name = "Research Department";
+$position = "Research Coordinator";
+$assigned_date = date('F Y');
 
-// Get thesis details from database
-$thesis = [
-    'title' => $thesis_title,
-    'author' => 'John dela Cruz',
-    'submitted' => 'Mar 01, 2026',
-    'abstract' => 'This research explores the impact of artificial intelligence on modern education systems, examining how AI technologies can enhance learning experiences, personalize education, and address challenges in traditional teaching methods. The study employs a mixed-methods approach to analyze both quantitative and qualitative data from various educational institutions.',
-    'file' => 'thesis_sample.pdf',
-    'file_size' => '2.4 MB',
-    'id' => $thesis_id
+// Sample forwarded theses data
+$forwardedTheses = [
+    [
+        'id' => 1,
+        'title' => 'Impact of Artificial Intelligence on Modern Education',
+        'author' => 'Juan Dela Cruz',
+        'date_forwarded' => '2026-03-15',
+        'status' => 'Pending',
+        'abstract' => 'This study explores how AI technologies are transforming educational practices, focusing on personalized learning and assessment methods.'
+    ],
+    [
+        'id' => 2,
+        'title' => 'Blockchain Technology for Secure Voting Systems',
+        'author' => 'Maria Santos',
+        'date_forwarded' => '2026-03-14',
+        'status' => 'Under Review',
+        'abstract' => 'This research investigates the application of blockchain technology in creating secure and transparent voting mechanisms.'
+    ],
+    [
+        'id' => 3,
+        'title' => 'Sustainable Low-Cost Water Filtration Systems',
+        'author' => 'Jose Rizal',
+        'date_forwarded' => '2026-03-12',
+        'status' => 'Approved',
+        'abstract' => 'This paper presents a novel approach to water filtration using locally available materials for rural communities.'
+    ],
+    [
+        'id' => 4,
+        'title' => 'Mental Health Awareness Among College Students',
+        'author' => 'Ana Reyes',
+        'date_forwarded' => '2026-03-10',
+        'status' => 'Pending',
+        'abstract' => 'This study examines the prevalence of mental health issues and the effectiveness of intervention programs.'
+    ],
+    [
+        'id' => 5,
+        'title' => 'Renewable Energy Solutions for Rural Communities',
+        'author' => 'Carlos Garcia',
+        'date_forwarded' => '2026-03-08',
+        'status' => 'Approved',
+        'abstract' => 'This research explores sustainable energy solutions for off-grid rural communities.'
+    ]
 ];
 
 $currentPage = basename($_SERVER['PHP_SELF']);
@@ -37,7 +71,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Review Thesis | Thesis Management System</title>
+    <title>Forwarded to Dean | Thesis Management System</title>
     
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -395,216 +429,208 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             transform: translateX(-3px);
         }
 
-        /* Thesis Detail Card */
-        .thesis-detail-card {
-            background: white;
-            border-radius: 24px;
-            padding: 32px;
-            margin-bottom: 32px;
-            border: 1px solid #fee2e2;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
-        }
-
-        .thesis-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #1f2937;
-            margin-bottom: 16px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid #fee2e2;
-        }
-
-        .thesis-meta {
-            display: flex;
-            gap: 24px;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
-        }
-
-        .meta-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #6b7280;
-            font-size: 0.85rem;
-        }
-
-        .meta-item i {
-            color: #dc2626;
-            width: 16px;
-        }
-
-        .abstract-section {
-            margin-bottom: 24px;
-        }
-
-        .abstract-section h4 {
-            font-size: 1rem;
-            font-weight: 600;
-            color: #991b1b;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .abstract-section p {
-            color: #4b5563;
-            line-height: 1.6;
-            font-size: 0.95rem;
-        }
-
-        .file-section {
-            background: #fef2f2;
-            border-radius: 16px;
-            padding: 16px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .file-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .file-info i {
-            font-size: 1.5rem;
-            color: #dc2626;
-        }
-
-        .file-details {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .file-name {
-            font-weight: 600;
-            color: #1f2937;
-            font-size: 0.9rem;
-        }
-
-        .file-size {
-            font-size: 0.7rem;
-            color: #9ca3af;
-        }
-
-        .download-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            background: white;
-            color: #dc2626;
-            text-decoration: none;
-            border-radius: 30px;
-            font-weight: 500;
-            font-size: 0.8rem;
-            border: 1px solid #fee2e2;
-            transition: all 0.2s;
-        }
-
-        .download-btn:hover {
-            background: #fee2e2;
-            transform: translateY(-2px);
-        }
-
-        /* Action Cards */
-        .action-cards {
+        /* Stats Cards */
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 24px;
+            margin-bottom: 32px;
         }
 
-        .action-card {
+        .stat-card {
             background: white;
-            border-radius: 24px;
-            padding: 28px;
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
             border: 1px solid #fee2e2;
             transition: all 0.2s;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
         }
 
-        .action-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
-            border-color: #dc2626;
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
         }
 
-        .action-icon {
-            width: 50px;
-            height: 50px;
-            background: #fef2f2;
-            border-radius: 16px;
+        .stat-icon {
+            width: 55px;
+            height: 55px;
+            border-radius: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 20px;
-        }
-
-        .action-icon i {
             font-size: 1.5rem;
+            background: #fef2f2;
             color: #dc2626;
         }
 
-        .action-card h3 {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #991b1b;
-            margin-bottom: 12px;
+        .stat-content h3 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #111827;
         }
 
-        .action-card p {
+        .stat-content p {
+            font-size: 0.8rem;
             color: #6b7280;
-            margin-bottom: 24px;
-            line-height: 1.5;
-            font-size: 0.9rem;
+            margin-top: 4px;
         }
 
-        .btn-approve {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            width: 100%;
-            padding: 14px 20px;
-            background: #10b981;
-            color: white;
-            border: none;
-            border-radius: 14px;
-            font-weight: 600;
-            font-size: 0.9rem;
+        /* Filter Tabs */
+        .filter-tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 20px;
+            background: white;
+            border: 1px solid #fee2e2;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #6b7280;
             cursor: pointer;
             transition: all 0.2s;
         }
 
-        .btn-approve:hover {
-            background: #059669;
-            transform: translateY(-2px);
+        .filter-btn:hover {
+            background: #fee2e2;
+            color: #dc2626;
         }
 
-        .btn-revise {
+        .filter-btn.active {
+            background: #dc2626;
+            color: white;
+            border-color: #dc2626;
+        }
+
+        /* Table Styles */
+        .forwarded-list {
+            background: white;
+            border-radius: 24px;
+            border: 1px solid #fee2e2;
+            overflow: hidden;
+        }
+
+        .forwarded-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .forwarded-table th {
+            text-align: left;
+            padding: 18px 20px;
+            background: #fef2f2;
+            color: #991b1b;
+            font-weight: 600;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #fee2e2;
+        }
+
+        .forwarded-table td {
+            padding: 16px 20px;
+            color: #1f2937;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #fef2f2;
+            vertical-align: middle;
+        }
+
+        .forwarded-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .forwarded-table tr:hover {
+            background: #fef2f2;
+        }
+
+        /* Status Badges */
+        .status-badge {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 8px;
-            width: 100%;
-            padding: 14px 20px;
-            background: #f59e0b;
-            color: white;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .status-under-review {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .status-approved {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-view {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #fef2f2;
+            color: #dc2626;
             text-decoration: none;
-            border-radius: 14px;
-            font-weight: 600;
-            font-size: 0.9rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
             transition: all 0.2s;
         }
 
-        .btn-revise:hover {
-            background: #d97706;
+        .btn-view:hover {
+            background: #fee2e2;
             transform: translateY(-2px);
+        }
+
+        .btn-track {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #dc2626;
+            color: white;
+            text-decoration: none;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-track:hover {
+            background: #991b1b;
+            transform: translateY(-2px);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            color: #dc2626;
+            margin-bottom: 16px;
+        }
+
+        .empty-state p {
+            color: #6b7280;
+            font-size: 0.9rem;
         }
 
         /* Sidebar Overlay */
@@ -648,9 +674,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 padding: 20px;
             }
             
-            .action-cards {
+            .stats-grid {
                 grid-template-columns: 1fr;
-                gap: 20px;
+                gap: 16px;
+            }
+            
+            .forwarded-table {
+                display: block;
+                overflow-x: auto;
             }
             
             .search-area {
@@ -661,30 +692,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 display: none;
             }
             
-            .page-header {
+            .action-buttons {
                 flex-direction: column;
-                align-items: flex-start;
+                gap: 8px;
             }
             
-            .page-header h2 {
-                font-size: 1.5rem;
-            }
-            
-            .thesis-detail-card {
-                padding: 20px;
-            }
-            
-            .thesis-title {
-                font-size: 1.2rem;
-            }
-            
-            .thesis-meta {
-                gap: 15px;
-            }
-            
-            .file-section {
-                flex-direction: column;
-                align-items: flex-start;
+            .btn-view, .btn-track {
+                justify-content: center;
             }
         }
 
@@ -693,12 +707,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 padding: 16px;
             }
             
-            .thesis-detail-card {
-                padding: 16px;
-            }
-            
-            .action-card {
-                padding: 20px;
+            .forwarded-table th,
+            .forwarded-table td {
+                padding: 12px 16px;
             }
         }
 
@@ -729,53 +740,49 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: #fecaca;
         }
 
-        body.dark-mode .thesis-detail-card {
+        body.dark-mode .stat-card {
             background: #2d2d2d;
             border-color: #991b1b;
         }
 
-        body.dark-mode .thesis-title {
+        body.dark-mode .stat-content h3 {
+            color: #fecaca;
+        }
+
+        body.dark-mode .forwarded-list {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+
+        body.dark-mode .forwarded-table th {
+            background: #3d3d3d;
             color: #fecaca;
             border-bottom-color: #991b1b;
         }
 
-        body.dark-mode .abstract-section p {
-            color: #cbd5e1;
+        body.dark-mode .forwarded-table td {
+            color: #e5e7eb;
+            border-bottom-color: #3d3d3d;
         }
 
-        body.dark-mode .file-section {
+        body.dark-mode .forwarded-table tr:hover {
             background: #3d3d3d;
         }
 
-        body.dark-mode .file-name {
-            color: #fecaca;
-        }
-
-        body.dark-mode .download-btn {
-            background: #2d2d2d;
-            color: #fecaca;
-            border-color: #991b1b;
-        }
-
-        body.dark-mode .download-btn:hover {
-            background: #3d3d3d;
-        }
-
-        body.dark-mode .action-card {
+        body.dark-mode .filter-btn {
             background: #2d2d2d;
             border-color: #991b1b;
-        }
-
-        body.dark-mode .action-card h3 {
-            color: #fecaca;
-        }
-
-        body.dark-mode .action-card p {
             color: #9ca3af;
         }
 
-        body.dark-mode .action-icon {
+        body.dark-mode .filter-btn.active {
+            background: #dc2626;
+            color: white;
+        }
+
+        body.dark-mode .btn-view {
             background: #3d3d3d;
+            color: #fecaca;
         }
 
         body.dark-mode .profile-dropdown {
@@ -785,19 +792,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
         body.dark-mode .profile-dropdown a {
             color: #e5e7eb;
-        }
-
-        body.dark-mode .profile-dropdown a:hover {
-            background: #3d3d3d;
-        }
-
-        body.dark-mode .back-link {
-            background: #3d3d3d;
-            color: #fecaca;
-        }
-
-        body.dark-mode .back-link:hover {
-            background: #4a4a4a;
         }
     </style>
 </head>
@@ -812,7 +806,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="logo">Thesis<span>Manager</span></div>
             <div class="search-area">
                 <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search...">
+                <input type="text" id="searchInput" placeholder="Search forwarded theses...">
             </div>
         </div>
         <div class="nav-right">
@@ -843,7 +837,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-th-large"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="reviewThesis.php" class="nav-item active">
+            <a href="reviewThesis.php" class="nav-item">
                 <i class="fas fa-file-alt"></i>
                 <span>Review Theses</span>
             </a>
@@ -851,7 +845,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-comment"></i>
                 <span>My Feedback</span>
             </a>
-            <a href="forwardedTheses.php" class="nav-item">
+            <a href="forwardedTheses.php" class="nav-item active">
                 <i class="fas fa-arrow-right"></i>
                 <span>Forwarded to Dean</span>
             </a>
@@ -874,70 +868,87 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
     <main class="main-content">
         <div class="page-header">
-            <h2>Review Thesis</h2>
+            <h2>Forwarded to Dean</h2>
             <a href="coordinatorDashboard.php" class="back-link">
                 <i class="fas fa-arrow-left"></i> Back to Dashboard
             </a>
         </div>
 
-        <div class="thesis-detail-card">
-            <h1 class="thesis-title"><?= htmlspecialchars($thesis['title']) ?></h1>
-            
-            <div class="thesis-meta">
-                <div class="meta-item">
-                    <i class="fas fa-user"></i>
-                    <span><?= htmlspecialchars($thesis['author']) ?></span>
-                </div>
-                <div class="meta-item">
-                    <i class="fas fa-calendar-alt"></i>
-                    <span>Submitted: <?= $thesis['submitted'] ?></span>
+        <!-- Statistics Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-arrow-right"></i></div>
+                <div class="stat-content">
+                    <h3><?= count($forwardedTheses) ?></h3>
+                    <p>Forwarded to Dean</p>
                 </div>
             </div>
-            
-            <div class="abstract-section">
-                <h4><i class="fas fa-align-left"></i> Abstract</h4>
-                <p><?= htmlspecialchars($thesis['abstract']) ?></p>
-            </div>
-            
-            <div class="file-section">
-                <div class="file-info">
-                    <i class="fas fa-file-pdf"></i>
-                    <div class="file-details">
-                        <span class="file-name"><?= $thesis['file'] ?></span>
-                        <span class="file-size">PDF, <?= $thesis['file_size'] ?></span>
-                    </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                <div class="stat-content">
+                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Pending'; })) ?></h3>
+                    <p>Pending Review</p>
                 </div>
-                <a href="#" class="download-btn">
-                    <i class="fas fa-download"></i> Download
-                </a>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-content">
+                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Approved'; })) ?></h3>
+                    <p>Approved</p>
+                </div>
             </div>
         </div>
 
-        <div class="action-cards">
-            <div class="action-card">
-                <div class="action-icon">
-                    <i class="fas fa-check-circle"></i>
+        <!-- Filter Tabs -->
+        <div class="filter-tabs">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="pending">Pending</button>
+            <button class="filter-btn" data-filter="under-review">Under Review</button>
+            <button class="filter-btn" data-filter="approved">Approved</button>
+        </div>
+
+        <!-- Table List -->
+        <div class="forwarded-list">
+            <?php if (empty($forwardedTheses)): ?>
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>No theses forwarded to dean yet.</p>
                 </div>
-                <h3>Forward to Dean</h3>
-                <p>Approve this thesis and forward it to the dean for final guidelines check and department verification.</p>
-                <form action="forwardedTheses.php" method="post">
-                    <input type="hidden" name="thesis_id" value="<?= $thesis['id'] ?>">
-                    <input type="hidden" name="thesis_title" value="<?= htmlspecialchars($thesis['title']) ?>">
-                    <button type="submit" class="btn-approve" onclick="return confirm('Are you sure you want to approve and forward this thesis to the Dean?')">
-                        <i class="fas fa-check"></i> Approve & Forward
-                    </button>
-                </form>
-            </div>
-            <div class="action-card">
-                <div class="action-icon">
-                    <i class="fas fa-edit"></i>
-                </div>
-                <h3>Request Revisions</h3>
-                <p>Send feedback to the faculty adviser for revisions. The thesis will be returned for improvements.</p>
-                <a href="facultyFeedback.php?title=<?= urlencode($thesis['title']) ?>&id=<?= $thesis['id'] ?>" class="btn-revise" onclick="return confirm('Are you sure you want to request revisions for this thesis?')">
-                    <i class="fas fa-pen"></i> Request Revisions
-                </a>
-            </div>
+            <?php else: ?>
+                <table class="forwarded-table" id="thesesTable">
+                    <thead>
+                        <tr>
+                            <th>Thesis Title</th>
+                            <th>Author</th>
+                            <th>Date Forwarded</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </thead>
+                    <tbody>
+                        <?php foreach ($forwardedTheses as $thesis): ?>
+                            <tr data-status="<?= strtolower(str_replace(' ', '-', $thesis['status'])) ?>">
+                                <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
+                                <td><?= htmlspecialchars($thesis['author']) ?></td>
+                                <td><?= date('M d, Y', strtotime($thesis['date_forwarded'])) ?></td>
+                                <td>
+                                    <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $thesis['status'])) ?>">
+                                        <i class="fas <?= $thesis['status'] == 'Pending' ? 'fa-clock' : ($thesis['status'] == 'Under Review' ? 'fa-spinner' : 'fa-check-circle') ?>"></i>
+                                        <?= $thesis['status'] ?>
+                                    </span>
+                                </td>
+                                <td class="action-buttons">
+                                    <a href="viewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
+                                        <i class="fas fa-eye"></i> View
+                                    </a>
+                                    <a href="trackThesis.php?id=<?= $thesis['id'] ?>" class="btn-track">
+                                        <i class="fas fa-chart-line"></i> Track
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </div>
     </main>
 
@@ -949,8 +960,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         const profileWrapper = document.getElementById('profileWrapper');
         const profileDropdown = document.getElementById('profileDropdown');
         const darkModeToggle = document.getElementById('darkmode');
+        const searchInput = document.getElementById('searchInput');
+        const filterBtns = document.querySelectorAll('.filter-btn');
+        const tableRows = document.querySelectorAll('#thesesTable tbody tr');
 
-        // Toggle Sidebar - For Hamburger Menu
+        // Toggle Sidebar
         function toggleSidebar() {
             sidebar.classList.toggle('open');
             if (sidebar.classList.contains('open')) {
@@ -962,7 +976,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
 
-        // Close Sidebar
         function closeSidebar() {
             sidebar.classList.remove('open');
             sidebarOverlay.classList.remove('show');
@@ -981,7 +994,33 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
 
-        // Dark Mode Toggle
+        // Filter Function
+        function filterTable(status) {
+            tableRows.forEach(row => {
+                if (status === 'all' || row.dataset.status === status) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Search Function
+        function handleSearch() {
+            const term = searchInput.value.toLowerCase();
+            tableRows.forEach(row => {
+                const title = row.cells[0]?.textContent.toLowerCase() || '';
+                const author = row.cells[1]?.textContent.toLowerCase() || '';
+                
+                if (title.includes(term) || author.includes(term)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Dark Mode
         function initDarkMode() {
             const isDark = localStorage.getItem('darkMode') === 'true';
             if (isDark) {
@@ -1008,25 +1047,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             const style = document.createElement('style');
             style.id = 'darkModeStyle';
             style.textContent = `
-                body.dark-mode { background: #1a1a1a; }
-                body.dark-mode .top-nav { background: #2d2d2d; border-bottom-color: #991b1b; }
-                body.dark-mode .logo { color: #fecaca; }
-                body.dark-mode .search-area { background: #3d3d3d; }
-                body.dark-mode .search-area input { background: #3d3d3d; color: white; }
-                body.dark-mode .profile-name { color: #fecaca; }
-                body.dark-mode .thesis-detail-card { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .thesis-title { color: #fecaca; border-bottom-color: #991b1b; }
-                body.dark-mode .abstract-section p { color: #cbd5e1; }
-                body.dark-mode .file-section { background: #3d3d3d; }
-                body.dark-mode .file-name { color: #fecaca; }
-                body.dark-mode .download-btn { background: #2d2d2d; color: #fecaca; border-color: #991b1b; }
-                body.dark-mode .action-card { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .action-card h3 { color: #fecaca; }
-                body.dark-mode .action-card p { color: #9ca3af; }
-                body.dark-mode .action-icon { background: #3d3d3d; }
-                body.dark-mode .profile-dropdown { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-dropdown a { color: #e5e7eb; }
-                body.dark-mode .back-link { background: #3d3d3d; color: #fecaca; }
+                body.dark-mode .stat-card { background: #2d2d2d; border-color: #991b1b; }
+                body.dark-mode .stat-content h3 { color: #fecaca; }
+                body.dark-mode .forwarded-list { background: #2d2d2d; border-color: #991b1b; }
+                body.dark-mode .forwarded-table th { background: #3d3d3d; color: #fecaca; border-bottom-color: #991b1b; }
+                body.dark-mode .forwarded-table td { color: #e5e7eb; border-bottom-color: #3d3d3d; }
+                body.dark-mode .forwarded-table tr:hover { background: #3d3d3d; }
+                body.dark-mode .filter-btn { background: #2d2d2d; border-color: #991b1b; color: #9ca3af; }
+                body.dark-mode .filter-btn.active { background: #dc2626; color: white; }
+                body.dark-mode .btn-view { background: #3d3d3d; color: #fecaca; }
             `;
             if (!document.getElementById('darkModeStyle')) {
                 document.head.appendChild(style);
@@ -1052,18 +1081,28 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             document.addEventListener('click', closeProfileDropdown);
         }
 
+        if (searchInput) {
+            searchInput.addEventListener('input', handleSearch);
+        }
+
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', function() {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                filterTable(this.dataset.filter);
+            });
+        });
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             initDarkMode();
             
-            // Close sidebar on escape key
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Escape' && sidebar.classList.contains('open')) {
                     closeSidebar();
                 }
             });
             
-            // Close sidebar when window is resized to desktop
             window.addEventListener('resize', function() {
                 if (window.innerWidth > 768 && sidebar.classList.contains('open')) {
                     closeSidebar();
