@@ -193,11 +193,45 @@ $conn->close();
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
         
-        /* Top Navigation */
-        .top-nav { position: fixed; top: 0; right: 0; left: 280px; height: 70px; background: white; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); z-index: 99; border-bottom: 1px solid #ffcdd2; }
+        /* Top Navigation - full width */
+        .top-nav { 
+            position: fixed; 
+            top: 0; 
+            right: 0; 
+            left: 0; 
+            height: 70px; 
+            background: white; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 32px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
+            z-index: 99; 
+            border-bottom: 1px solid #ffcdd2; 
+        }
         .nav-left { display: flex; align-items: center; gap: 24px; }
-        .hamburger { display: none; flex-direction: column; gap: 5px; width: 40px; height: 40px; background: #fef2f2; border: none; border-radius: 8px; cursor: pointer; padding: 12px; }
-        .hamburger span { display: block; width: 20px; height: 2px; background: #dc2626; border-radius: 2px; }
+        .hamburger { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 5px; 
+            width: 40px; 
+            height: 40px; 
+            background: #fef2f2; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            padding: 12px;
+            align-items: center;
+            justify-content: center;
+        }
+        .hamburger span { 
+            display: block; 
+            width: 20px; 
+            height: 2px; 
+            background: #dc2626; 
+            border-radius: 2px; 
+            transition: 0.3s;
+        }
         .hamburger:hover { background: #fee2e2; }
         .logo { font-size: 1.3rem; font-weight: 700; color: #d32f2f; }
         .logo span { color: #d32f2f; }
@@ -216,8 +250,22 @@ $conn->close();
         .profile-dropdown a:hover { background: #ffebee; color: #dc2626; }
         .profile-dropdown hr { margin: 0; border-color: #ffcdd2; }
         
-        /* Sidebar */
-        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100%; background: linear-gradient(180deg, #b71c1c 0%, #d32f2f 100%); display: flex; flex-direction: column; z-index: 100; transition: left 0.3s; box-shadow: 4px 0 15px rgba(0,0,0,0.1); }
+        /* Sidebar - COLLAPSIBLE MENU BAR (hidden by default) */
+        .sidebar { 
+            position: fixed; 
+            top: 0; 
+            left: -300px;  /* hidden by default */
+            width: 280px; 
+            height: 100%; 
+            background: linear-gradient(180deg, #b71c1c 0%, #d32f2f 100%); 
+            display: flex; 
+            flex-direction: column; 
+            z-index: 1000; 
+            transition: left 0.3s ease; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.1); 
+        }
+        .sidebar.open { left: 0; }  /* show when open class added */
+        
         .logo-container { padding: 28px 24px; border-bottom: 1px solid rgba(255,255,255,0.2); text-align: center; }
         .logo-container .logo { color: white; font-size: 1.4rem; }
         .logo-container .logo span { color: #ffcdd2; }
@@ -244,8 +292,27 @@ $conn->close();
         .logout-btn { display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-decoration: none; color: #ffebee; border-radius: 10px; transition: all 0.2s; }
         .logout-btn:hover { background: rgba(255,255,255,0.15); color: white; }
         
-        /* Main Content */
-        .main-content { margin-left: 280px; margin-top: 70px; padding: 30px; transition: margin-left 0.3s; }
+        /* Main Content - full width (no margin) */
+        .main-content { 
+            margin-left: 0; 
+            margin-top: 70px; 
+            padding: 30px; 
+            transition: margin-left 0.3s; 
+        }
+        
+        /* Overlay when sidebar is open */
+        .sidebar-overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0,0,0,0.5); 
+            z-index: 999; 
+            display: none; 
+        }
+        .sidebar-overlay.show { display: block; }
+        
         .page-header { margin-bottom: 30px; }
         .page-header h1 { font-size: 1.8rem; font-weight: 700; color: #d32f2f; display: flex; align-items: center; gap: 12px; }
         .page-header p { color: #6b7280; margin-top: 5px; }
@@ -279,25 +346,24 @@ $conn->close();
         .empty-state { text-align: center; padding: 60px; color: #6b7280; }
         .empty-state i { font-size: 3rem; margin-bottom: 15px; color: #d32f2f; }
         
-        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99; display: none; }
-        .sidebar-overlay.show { display: block; }
-        
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
         @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 768px) {
-            .top-nav { left: 0; padding: 0 16px; }
-            .hamburger { display: flex; }
-            .sidebar { left: -280px; }
-            .sidebar.open { left: 0; }
-            .main-content { margin-left: 0; padding: 20px; }
+            .top-nav { padding: 0 16px; }
+            .main-content { padding: 20px; }
             .stats-grid { grid-template-columns: 1fr; }
             .filter-bar { flex-direction: column; align-items: stretch; }
             .filter-select, .date-input, .filter-btn, .clear-btn { width: 100%; }
             .search-area { display: none; }
             .profile-name { display: none; }
         }
-        @media (max-width: 480px) { .main-content { padding: 16px; } .stat-card { padding: 16px; } .stat-icon { width: 45px; height: 45px; font-size: 1.2rem; } .stat-details h3 { font-size: 1.4rem; } }
+        @media (max-width: 480px) { 
+            .main-content { padding: 16px; } 
+            .stat-card { padding: 16px; } 
+            .stat-icon { width: 45px; height: 45px; font-size: 1.2rem; } 
+            .stat-details h3 { font-size: 1.4rem; } 
+        }
         
         /* Dark Mode */
         body.dark-mode { background: #0f172a; }
@@ -322,38 +388,73 @@ $conn->close();
 </head>
 <body>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
     <header class="top-nav">
         <div class="nav-left">
-            <button class="hamburger" id="hamburgerBtn"><span></span><span></span><span></span></button>
+            <button class="hamburger" id="hamburgerBtn">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="search-area"><i class="fas fa-search"></i><input type="text" id="searchInput" placeholder="Search logs..."></div>
+            <div class="search-area">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Search logs...">
+            </div>
         </div>
         <div class="nav-right">
-            <div class="notification-icon"><i class="far fa-bell"></i><?php if ($notificationCount > 0): ?><span class="notification-badge"><?= $notificationCount ?></span><?php endif; ?></div>
             <div class="profile-wrapper" id="profileWrapper">
-                <div class="profile-trigger"><span class="profile-name"><?= htmlspecialchars($fullName) ?></span><div class="profile-avatar"><?= htmlspecialchars($initials) ?></div></div>
-                <div class="profile-dropdown" id="profileDropdown"><a href="profile.php"><i class="fas fa-user"></i> Profile</a><a href="#"><i class="fas fa-cog"></i> Settings</a><hr><a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></div>
+                <div class="profile-trigger">
+                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
+                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="#"><i class="fas fa-cog"></i> Settings</a>
+                    <hr>
+                    <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
             </div>
         </div>
     </header>
+    
     <aside class="sidebar" id="sidebar">
-        <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="admin-label">ADMINISTRATOR</div></div>
+        <div class="logo-container">
+            <div class="logo">Thesis<span>Manager</span></div>
+            <div class="admin-label">ADMINISTRATOR</div>
+        </div>
         <div class="nav-menu">
             <a href="admindashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
             <a href="users.php" class="nav-item"><i class="fas fa-users"></i><span>Users</span></a>
             <a href="audit_logs.php" class="nav-item active"><i class="fas fa-history"></i><span>Audit Logs</span></a>
         </div>
         <div class="dashboard-links">
-            <div class="dashboard-links-header"><i class="fas fa-chalkboard-user"></i><span>Quick Access</span></div>
+            <div class="dashboard-links-header">
+                <i class="fas fa-chalkboard-user"></i><span>Quick Access</span>
+            </div>
             <?php foreach ($dashboards as $dashboard): ?>
-            <a href="/ArchivingThesis/<?= $dashboard['folder'] ?>/<?= $dashboard['file'] ?>" class="dashboard-link" target="_blank"><i class="fas <?= $dashboard['icon'] ?>" style="color: <?= $dashboard['color'] ?>"></i><span><?= $dashboard['name'] ?> Dashboard</span><i class="fas fa-external-link-alt link-icon"></i></a>
+            <a href="/ArchivingThesis/<?= $dashboard['folder'] ?>/<?= $dashboard['file'] ?>" class="dashboard-link" target="_blank">
+                <i class="fas <?= $dashboard['icon'] ?>" style="color: <?= $dashboard['color'] ?>"></i>
+                <span><?= $dashboard['name'] ?> Dashboard</span>
+                <i class="fas fa-external-link-alt link-icon"></i>
+            </a>
             <?php endforeach; ?>
         </div>
         <div class="nav-footer">
-            <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i><span class="slider"></span></label></div>
-            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+            <div class="theme-toggle">
+                <input type="checkbox" id="darkmode">
+                <label for="darkmode" class="toggle-label">
+                    <i class="fas fa-sun"></i>
+                    <i class="fas fa-moon"></i>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn">
+                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+            </a>
         </div>
     </aside>
+    
     <main class="main-content">
         <div class="page-header">
             <h1><i class="fas fa-history"></i> Audit Logs</h1>
@@ -361,10 +462,34 @@ $conn->close();
         </div>
         
         <div class="stats-grid">
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-chart-line"></i></div><div class="stat-details"><h3><?= number_format($total_logs) ?></h3><p>Total Logs</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-users"></i></div><div class="stat-details"><h3><?= number_format($unique_users) ?></h3><p>Unique Users</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-calendar-day"></i></div><div class="stat-details"><h3><?= number_format($today_logs) ?></h3><p>Today's Logs</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-calendar-week"></i></div><div class="stat-details"><h3><?= number_format($this_week) ?></h3><p>This Week</p></div></div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($total_logs) ?></h3>
+                    <p>Total Logs</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-users"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($unique_users) ?></h3>
+                    <p>Unique Users</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-calendar-day"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($today_logs) ?></h3>
+                    <p>Today's Logs</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-calendar-week"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($this_week) ?></h3>
+                    <p>This Week</p>
+                </div>
+            </div>
         </div>
         
         <div class="filter-bar">
@@ -385,7 +510,7 @@ $conn->close();
             <div class="table-responsive">
                 <table class="logs-table">
                     <thead>
-                        60
+                        <tr>
                             <th>User</th>
                             <th>Action</th>
                             <th>Table</th>
@@ -393,10 +518,16 @@ $conn->close();
                             <th>Description</th>
                             <th>IP Address</th>
                             <th>Date & Time</th>
-                        </thead>
+                        </tr>
+                    </thead>
                     <tbody id="logsTableBody">
                         <?php if (empty($logs)): ?>
-                        <tr><td colspan="7" class="empty-state"><i class="fas fa-database"></i><p>No audit logs found</p></td></tr>
+                        <tr>
+                            <td colspan="7" class="empty-state">
+                                <i class="fas fa-database"></i>
+                                <p>No audit logs found</p>
+                            </td>
+                        </tr>
                         <?php else: ?>
                         <?php foreach ($logs as $log): ?>
                         <tr>
@@ -411,10 +542,11 @@ $conn->close();
                         <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
-                60
+                </table>
             </div>
         </div>
     </main>
+    
     <script>
         // DOM Elements
         const hamburgerBtn = document.getElementById('hamburgerBtn');
@@ -534,7 +666,7 @@ $conn->close();
         // Initialize
         initDarkMode();
         
-        console.log('Audit Logs Page Loaded');
+        console.log('Audit Logs Page Loaded - Menu Bar Style Sidebar');
     </script>
 </body>
 </html>

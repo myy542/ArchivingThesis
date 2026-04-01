@@ -75,7 +75,7 @@ function logAdminAction($conn, $user_id, $action, $table, $record_id, $descripti
 
 logAdminAction($conn, $user_id, "Admin accessed dashboard", "user_table", $user_id, "Admin $fullName accessed the admin dashboard");
 
-// DASHBOARDS - UPDATED: Faculty to Research Adviser
+// DASHBOARDS
 $dashboards = [
     1 => ['name' => 'Admin', 'icon' => 'fa-user-shield', 'color' => '#d32f2f', 'folder' => 'admin', 'file' => 'admindashboard.php', 'role_id' => 1],
     2 => ['name' => 'Student', 'icon' => 'fa-user-graduate', 'color' => '#1976d2', 'folder' => 'student', 'file' => 'student_dashboard.php', 'role_id' => 2],
@@ -111,6 +111,13 @@ if ($has_created) {
 // GET AUDIT LOGS COUNT
 $logs_count = $conn->query("SELECT COUNT(*) as c FROM audit_logs")->fetch_assoc()['c'];
 
+// GET THESES COUNT
+$theses_count = 0;
+$check_theses_table = $conn->query("SHOW TABLES LIKE 'theses'");
+if ($check_theses_table && $check_theses_table->num_rows > 0) {
+    $theses_count = $conn->query("SELECT COUNT(*) as c FROM theses")->fetch_assoc()['c'];
+}
+
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows) {
@@ -131,87 +138,1039 @@ $conn->close();
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="css/admindashboard.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #fef2f2;
+            color: #1f2937;
+            overflow-x: hidden;
+        }
+
+        /* Top Navigation - full width */
+        .top-nav {
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 0;
+            height: 70px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            z-index: 99;
+            border-bottom: 1px solid #ffcdd2;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        /* Hamburger - ALWAYS VISIBLE */
+        .hamburger {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            width: 40px;
+            height: 40px;
+            background: #fef2f2;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            padding: 12px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .hamburger span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: #dc2626;
+            border-radius: 2px;
+            transition: 0.3s;
+        }
+
+        .hamburger:hover {
+            background: #fee2e2;
+        }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #d32f2f;
+        }
+
+        .logo span {
+            color: #d32f2f;
+        }
+
+        .search-area {
+            display: flex;
+            align-items: center;
+            background: #fef2f2;
+            padding: 8px 16px;
+            border-radius: 40px;
+            gap: 10px;
+            border: 1px solid #ffcdd2;
+        }
+
+        .search-area i {
+            color: #dc2626;
+        }
+
+        .search-area input {
+            border: none;
+            background: none;
+            outline: none;
+            font-size: 0.85rem;
+            width: 220px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .notification-icon {
+            position: relative;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            background: #fef2f2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .notification-icon:hover {
+            background: #fee2e2;
+        }
+
+        .notification-icon i {
+            font-size: 1.2rem;
+            color: #dc2626;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ef4444;
+            color: white;
+            font-size: 0.6rem;
+            font-weight: 600;
+            min-width: 18px;
+            height: 18px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .profile-wrapper {
+            position: relative;
+        }
+
+        .profile-trigger {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            padding: 5px 12px;
+            border-radius: 40px;
+            transition: background 0.3s;
+        }
+
+        .profile-trigger:hover {
+            background: #ffebee;
+        }
+
+        .profile-name {
+            font-weight: 500;
+            color: #1f2937;
+            font-size: 0.9rem;
+        }
+
+        .profile-avatar {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, #dc2626, #5b3b3b);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .profile-dropdown {
+            position: absolute;
+            top: 55px;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            min-width: 200px;
+            display: none;
+            overflow: hidden;
+            z-index: 100;
+            border: 1px solid #ffcdd2;
+        }
+
+        .profile-dropdown.show {
+            display: block;
+            animation: fadeIn 0.2s;
+        }
+
+        .profile-dropdown a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 18px;
+            text-decoration: none;
+            color: #1f2937;
+            transition: 0.2s;
+            font-size: 0.85rem;
+        }
+
+        .profile-dropdown a:hover {
+            background: #ffebee;
+            color: #dc2626;
+        }
+
+        .profile-dropdown hr {
+            margin: 0;
+            border-color: #ffcdd2;
+        }
+
+        /* Sidebar - COLLAPSIBLE MENU BAR (hidden by default) */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 280px;
+            height: 100%;
+            background: linear-gradient(180deg, #b71c1c 0%, #d32f2f 100%);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            transition: left 0.3s ease;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .sidebar.open {
+            left: 0;
+        }
+
+        .logo-container {
+            padding: 28px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+        }
+
+        .logo-container .logo {
+            color: white;
+            font-size: 1.4rem;
+        }
+
+        .logo-container .logo span {
+            color: #ffcdd2;
+        }
+
+        .admin-label {
+            font-size: 0.7rem;
+            color: #ffcdd2;
+            margin-top: 5px;
+            letter-spacing: 1px;
+        }
+
+        .nav-menu {
+            flex: 1;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            text-decoration: none;
+            color: #ffebee;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-item i {
+            width: 22px;
+            font-size: 1.1rem;
+        }
+
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .nav-item.active {
+            background: rgba(255, 255, 255, 0.25);
+            color: white;
+        }
+
+        /* Theses Link - same style as nav-item */
+        .theses-link {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            text-decoration: none;
+            color: #ffebee;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .theses-link i {
+            width: 22px;
+            font-size: 1.1rem;
+        }
+
+        .theses-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .dashboard-links {
+            padding: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            margin: 5px 0;
+        }
+
+        .dashboard-links-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            color: #ffcdd2;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .dashboard-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            text-decoration: none;
+            color: #ffebee;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .dashboard-link:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateX(5px);
+        }
+
+        .dashboard-link .link-icon {
+            margin-left: auto;
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        .nav-footer {
+            padding: 20px 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .theme-toggle {
+            margin-bottom: 15px;
+        }
+
+        .theme-toggle input {
+            display: none;
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            position: relative;
+            width: 55px;
+            height: 28px;
+            background: rgba(255, 255, 255, 0.25);
+            border-radius: 30px;
+        }
+
+        .toggle-label i {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            z-index: 1;
+        }
+
+        .toggle-label i:first-child {
+            left: 8px;
+            color: #f39c12;
+        }
+
+        .toggle-label i:last-child {
+            right: 8px;
+            color: #f1c40f;
+        }
+
+        .toggle-label .slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 22px;
+            height: 22px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        #darkmode:checked + .toggle-label .slider {
+            transform: translateX(27px);
+        }
+
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            text-decoration: none;
+            color: #ffebee;
+            border-radius: 10px;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+        }
+
+        /* Main Content - full width */
+        .main-content {
+            margin-left: 0;
+            margin-top: 70px;
+            padding: 30px;
+            transition: margin-left 0.3s;
+        }
+
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* Welcome Banner */
+        .welcome-banner {
+            background: linear-gradient(135deg, #b71c1c, #d32f2f);
+            border-radius: 20px;
+            padding: 30px 35px;
+            margin-bottom: 30px;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .welcome-info h1 {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .welcome-info p {
+            opacity: 0.9;
+            font-size: 0.85rem;
+        }
+
+        .admin-info {
+            text-align: right;
+        }
+
+        .admin-name {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .admin-since {
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 25px;
+            margin-bottom: 25px;
+        }
+
+        .stats-grid-second {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 25px;
+            margin-bottom: 35px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 20px;
+            padding: 22px 20px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            border: 1px solid #ffcdd2;
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(211, 47, 47, 0.1);
+        }
+
+        .stat-icon {
+            width: 55px;
+            height: 55px;
+            background: #ffebee;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: #d32f2f;
+        }
+
+        .stat-details h3 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #d32f2f;
+            margin-bottom: 5px;
+        }
+
+        .stat-details p {
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+
+        .stat-card-small {
+            background: white;
+            border-radius: 16px;
+            padding: 18px 16px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid #ffcdd2;
+            transition: all 0.3s;
+        }
+
+        .stat-card-small:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-icon-small {
+            width: 48px;
+            height: 48px;
+            background: #ffebee;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: #d32f2f;
+        }
+
+        .stat-details-small h4 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #d32f2f;
+            margin-bottom: 4px;
+        }
+
+        .stat-details-small p {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        /* Charts */
+        .charts-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-bottom: 35px;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid #ffcdd2;
+        }
+
+        .chart-card h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #d32f2f;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .chart-container {
+            height: 250px;
+            position: relative;
+        }
+
+        /* Cards Row */
+        .cards-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-top: 25px;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            border: 1px solid #ffcdd2;
+            transition: all 0.3s;
+        }
+
+        .info-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(211, 47, 47, 0.1);
+        }
+
+        .info-card h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #d32f2f;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-stats {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+            margin-top: 15px;
+        }
+
+        .info-stat {
+            text-align: center;
+        }
+
+        .info-stat .number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #d32f2f;
+        }
+
+        .info-stat .label {
+            font-size: 0.7rem;
+            color: #6b7280;
+        }
+
+        .btn-view-all {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 8px 16px;
+            background: #d32f2f;
+            color: white;
+            text-decoration: none;
+            border-radius: 30px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .btn-view-all:hover {
+            background: #b71c1c;
+            transform: translateY(-2px);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Dark Mode */
+        body.dark-mode {
+            background: #0f172a;
+        }
+
+        body.dark-mode .top-nav {
+            background: #1e293b;
+            border-bottom-color: #334155;
+        }
+
+        body.dark-mode .logo {
+            color: #fecaca;
+        }
+
+        body.dark-mode .search-area {
+            background: #334155;
+            border-color: #475569;
+        }
+
+        body.dark-mode .search-area input {
+            color: white;
+        }
+
+        body.dark-mode .profile-name {
+            color: #e5e7eb;
+        }
+
+        body.dark-mode .stat-card,
+        body.dark-mode .stat-card-small,
+        body.dark-mode .chart-card,
+        body.dark-mode .info-card {
+            background: #1e293b;
+            border-color: #334155;
+        }
+
+        body.dark-mode .stat-details h3,
+        body.dark-mode .stat-details-small h4,
+        body.dark-mode .info-stat .number {
+            color: #fecaca;
+        }
+
+        body.dark-mode .profile-dropdown {
+            background: #1e293b;
+            border-color: #334155;
+        }
+
+        body.dark-mode .profile-dropdown a {
+            color: #e5e7eb;
+        }
+
+        body.dark-mode .profile-dropdown a:hover {
+            background: #334155;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .stats-grid,
+            .stats-grid-second,
+            .charts-row,
+            .cards-row {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .top-nav {
+                left: 0;
+                padding: 0 16px;
+            }
+
+            .sidebar {
+                left: -280px;
+            }
+
+            .sidebar.open {
+                left: 0;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .stats-grid,
+            .stats-grid-second,
+            .charts-row,
+            .cards-row {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .search-area {
+                display: none;
+            }
+
+            .profile-name {
+                display: none;
+            }
+
+            .welcome-banner {
+                flex-direction: column;
+                text-align: center;
+                gap: 15px;
+                padding: 25px;
+            }
+
+            .admin-info {
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-content {
+                padding: 16px;
+            }
+
+            .stat-card,
+            .stat-card-small {
+                padding: 16px;
+            }
+
+            .stat-icon {
+                width: 45px;
+                height: 45px;
+                font-size: 1.2rem;
+            }
+
+            .stat-details h3 {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
     <header class="top-nav">
         <div class="nav-left">
-            <button class="hamburger" id="hamburgerBtn"><span></span><span></span><span></span></button>
+            <button class="hamburger" id="hamburgerBtn">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="search-area"><i class="fas fa-search"></i><input type="text" id="searchInput" placeholder="Search..."></div>
+            <div class="search-area">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Search...">
+            </div>
         </div>
         <div class="nav-right">
-            <div class="notification-icon"><i class="far fa-bell"></i><?php if ($notificationCount > 0): ?><span class="notification-badge"><?= $notificationCount ?></span><?php endif; ?></div>
+            <div class="notification-icon">
+                <i class="far fa-bell"></i>
+                <?php if ($notificationCount > 0): ?>
+                    <span class="notification-badge"><?= $notificationCount ?></span>
+                <?php endif; ?>
+            </div>
             <div class="profile-wrapper" id="profileWrapper">
-                <div class="profile-trigger"><span class="profile-name"><?= htmlspecialchars($fullName) ?></span><div class="profile-avatar"><?= htmlspecialchars($initials) ?></div></div>
-                <div class="profile-dropdown" id="profileDropdown"><a href="profile.php"><i class="fas fa-user"></i> Profile</a><a href="#"><i class="fas fa-cog"></i> Settings</a><hr><a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></div>
+                <div class="profile-trigger">
+                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
+                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="#"><i class="fas fa-cog"></i> Settings</a>
+                    <hr>
+                    <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
             </div>
         </div>
     </header>
+    
     <aside class="sidebar" id="sidebar">
-        <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="admin-label">ADMINISTRATOR</div></div>
+        <div class="logo-container">
+            <div class="logo">Thesis<span>Manager</span></div>
+            <div class="admin-label">ADMINISTRATOR</div>
+        </div>
         <div class="nav-menu">
             <a href="admindashboard.php" class="nav-item active"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
             <a href="users.php" class="nav-item"><i class="fas fa-users"></i><span>Users</span></a>
             <a href="audit_logs.php" class="nav-item"><i class="fas fa-history"></i><span>Audit Logs</span></a>
+            <a href="theses.php" class="theses-link"><i class="fas fa-file-alt"></i><span>Theses</span></a>
         </div>
         <div class="dashboard-links">
-            <div class="dashboard-links-header"><i class="fas fa-chalkboard-user"></i><span>Quick Access</span></div>
+            <div class="dashboard-links-header">
+                <i class="fas fa-chalkboard-user"></i><span>Quick Access</span>
+            </div>
             <?php foreach ($dashboards as $dashboard): ?>
-            <a href="/ArchivingThesis/<?= $dashboard['folder'] ?>/<?= $dashboard['file'] ?>" class="dashboard-link" target="_blank"><i class="fas <?= $dashboard['icon'] ?>" style="color: <?= $dashboard['color'] ?>"></i><span><?= $dashboard['name'] ?> Dashboard</span><i class="fas fa-external-link-alt link-icon"></i></a>
+            <a href="/ArchivingThesis/<?= $dashboard['folder'] ?>/<?= $dashboard['file'] ?>" class="dashboard-link" target="_blank">
+                <i class="fas <?= $dashboard['icon'] ?>" style="color: <?= $dashboard['color'] ?>"></i>
+                <span><?= $dashboard['name'] ?> Dashboard</span>
+                <i class="fas fa-external-link-alt link-icon"></i>
+            </a>
             <?php endforeach; ?>
         </div>
         <div class="nav-footer">
-            <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i><span class="slider"></span></label></div>
-            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
+            <div class="theme-toggle">
+                <input type="checkbox" id="darkmode">
+                <label for="darkmode" class="toggle-label">
+                    <i class="fas fa-sun"></i>
+                    <i class="fas fa-moon"></i>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn">
+                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+            </a>
         </div>
     </aside>
+    
     <main class="main-content">
         <div class="welcome-banner">
-            <div class="welcome-info"><h1>Admin Dashboard</h1><p>Welcome back, <?= htmlspecialchars($first_name) ?>! • System Overview</p></div>
-            <div class="admin-info"><div class="admin-name"><?= htmlspecialchars($fullName) ?></div><div class="admin-since">Admin since <?= $user_created ?></div></div>
+            <div class="welcome-info">
+                <h1>Admin Dashboard</h1>
+                <p>Welcome back, <?= htmlspecialchars($first_name) ?>! • System Overview</p>
+            </div>
+            <div class="admin-info">
+                <div class="admin-name"><?= htmlspecialchars($fullName) ?></div>
+                <div class="admin-since">Admin since <?= $user_created ?></div>
+            </div>
         </div>
         
         <div class="stats-grid">
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-users"></i></div><div class="stat-details"><h3><?= number_format($stats['Total Users']) ?></h3><p>Active Users</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-user-graduate"></i></div><div class="stat-details"><h3><?= number_format($stats['Student']) ?></h3><p>Students</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-chalkboard-user"></i></div><div class="stat-details"><h3><?= number_format($stats['Research Adviser']) ?></h3><p>Research Advisers</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-user-tie"></i></div><div class="stat-details"><h3><?= number_format($stats['Dean']) ?></h3><p>Deans</p></div></div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-users"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($stats['Total Users']) ?></h3>
+                    <p>Active Users</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-user-graduate"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($stats['Student']) ?></h3>
+                    <p>Students</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-chalkboard-user"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($stats['Research Adviser']) ?></h3>
+                    <p>Research Advisers</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon"><i class="fas fa-user-tie"></i></div>
+                <div class="stat-details">
+                    <h3><?= number_format($stats['Dean']) ?></h3>
+                    <p>Deans</p>
+                </div>
+            </div>
         </div>
         
         <div class="stats-grid-second">
-            <div class="stat-card-small"><div class="stat-icon-small"><i class="fas fa-book-reader"></i></div><div class="stat-details-small"><h4><?= number_format($stats['Librarian']) ?></h4><p>Librarians</p></div></div>
-            <div class="stat-card-small"><div class="stat-icon-small"><i class="fas fa-clipboard-list"></i></div><div class="stat-details-small"><h4><?= number_format($stats['Coordinator']) ?></h4><p>Coordinators</p></div></div>
-            <div class="stat-card-small"><div class="stat-icon-small"><i class="fas fa-user-shield"></i></div><div class="stat-details-small"><h4><?= number_format($stats['Admin']) ?></h4><p>Admins</p></div></div>
-            <div class="stat-card-small"><div class="stat-icon-small"><i class="fas fa-chart-line"></i></div><div class="stat-details-small"><h4><?= number_format($logs_count) ?></h4><p>Total Logs</p></div></div>
+            <div class="stat-card-small">
+                <div class="stat-icon-small"><i class="fas fa-book-reader"></i></div>
+                <div class="stat-details-small">
+                    <h4><?= number_format($stats['Librarian']) ?></h4>
+                    <p>Librarians</p>
+                </div>
+            </div>
+            <div class="stat-card-small">
+                <div class="stat-icon-small"><i class="fas fa-clipboard-list"></i></div>
+                <div class="stat-details-small">
+                    <h4><?= number_format($stats['Coordinator']) ?></h4>
+                    <p>Coordinators</p>
+                </div>
+            </div>
+            <div class="stat-card-small">
+                <div class="stat-icon-small"><i class="fas fa-user-shield"></i></div>
+                <div class="stat-details-small">
+                    <h4><?= number_format($stats['Admin']) ?></h4>
+                    <p>Admins</p>
+                </div>
+            </div>
+            <div class="stat-card-small">
+                <div class="stat-icon-small"><i class="fas fa-file-alt"></i></div>
+                <div class="stat-details-small">
+                    <h4><?= number_format($theses_count) ?></h4>
+                    <p>Theses</p>
+                </div>
+            </div>
         </div>
         
         <div class="charts-row">
-            <div class="chart-card"><h3><i class="fas fa-chart-pie"></i> User Distribution by Role</h3><div class="chart-container"><canvas id="userDistributionChart"></canvas></div></div>
-            <div class="chart-card"><h3><i class="fas fa-chart-line"></i> User Registration Trend</h3><div class="chart-container"><canvas id="registrationChart"></canvas></div></div>
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-pie"></i> User Distribution by Role</h3>
+                <div class="chart-container">
+                    <canvas id="userDistributionChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h3><i class="fas fa-chart-line"></i> User Registration Trend</h3>
+                <div class="chart-container">
+                    <canvas id="registrationChart"></canvas>
+                </div>
+            </div>
         </div>
         
         <div class="cards-row">
             <div class="info-card">
                 <h3><i class="fas fa-users"></i> User Management</h3>
                 <div class="info-stats">
-                    <div class="info-stat"><div class="number"><?= $active_users ?></div><div class="label">Active</div></div>
-                    <div class="info-stat"><div class="number"><?= $inactive_users ?></div><div class="label">Inactive</div></div>
-                    <div class="info-stat"><div class="number"><?= $all_users_count ?></div><div class="label">Total</div></div>
+                    <div class="info-stat">
+                        <div class="number"><?= $active_users ?></div>
+                        <div class="label">Active</div>
+                    </div>
+                    <div class="info-stat">
+                        <div class="number"><?= $inactive_users ?></div>
+                        <div class="label">Inactive</div>
+                    </div>
+                    <div class="info-stat">
+                        <div class="number"><?= $all_users_count ?></div>
+                        <div class="label">Total</div>
+                    </div>
                 </div>
                 <a href="users.php" class="btn-view-all"><i class="fas fa-arrow-right"></i> Manage Users</a>
             </div>
             <div class="info-card">
-                <h3><i class="fas fa-history"></i> Audit Logs</h3>
+                <h3><i class="fas fa-file-alt"></i> Theses Management</h3>
                 <div class="info-stats">
-                    <div class="info-stat"><div class="number"><?= $logs_count ?></div><div class="label">Total Logs</div></div>
-                    <div class="info-stat"><div class="number"><?= date('M d, Y') ?></div><div class="label">Today</div></div>
+                    <div class="info-stat">
+                        <div class="number"><?= $theses_count ?></div>
+                        <div class="label">Total Theses</div>
+                    </div>
                 </div>
-                <a href="audit_logs.php" class="btn-view-all"><i class="fas fa-arrow-right"></i> View Logs</a>
+                <a href="theses.php" class="btn-view-all"><i class="fas fa-arrow-right"></i> Manage Theses</a>
             </div>
         </div>
     </main>
+    
     <script>
         window.userData = {
             stats: { 
@@ -225,7 +1184,187 @@ $conn->close();
             monthlyData: <?= json_encode($monthly) ?>, 
             months: <?= json_encode($months) ?>
         };
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const hamburgerBtn = document.getElementById('hamburgerBtn');
+            const sidebar = document.getElementById('sidebar');
+            const sidebarOverlay = document.getElementById('sidebarOverlay');
+            const profileWrapper = document.getElementById('profileWrapper');
+            const profileDropdown = document.getElementById('profileDropdown');
+            const darkModeToggle = document.getElementById('darkmode');
+
+            // ==================== SIDEBAR FUNCTIONS ====================
+            function openSidebar() {
+                sidebar.classList.add('open');
+                sidebarOverlay.classList.add('show');
+                document.body.style.overflow = 'hidden';
+                console.log('Sidebar opened');
+            }
+
+            function closeSidebar() {
+                sidebar.classList.remove('open');
+                sidebarOverlay.classList.remove('show');
+                document.body.style.overflow = '';
+                console.log('Sidebar closed');
+            }
+
+            function toggleSidebar(e) {
+                e.stopPropagation();
+                if (sidebar.classList.contains('open')) {
+                    closeSidebar();
+                } else {
+                    openSidebar();
+                }
+            }
+
+            // Hamburger Button Event
+            if (hamburgerBtn) {
+                hamburgerBtn.addEventListener('click', toggleSidebar);
+                console.log('Hamburger button initialized');
+            }
+
+            // Close sidebar when clicking overlay
+            if (sidebarOverlay) {
+                sidebarOverlay.addEventListener('click', closeSidebar);
+            }
+
+            // Close sidebar on Escape key
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    if (sidebar.classList.contains('open')) closeSidebar();
+                    if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+                }
+            });
+
+            // Close sidebar on window resize (if screen becomes larger)
+            window.addEventListener('resize', function() {
+                if (window.innerWidth > 768 && sidebar.classList.contains('open')) {
+                    closeSidebar();
+                }
+            });
+
+            // ==================== PROFILE DROPDOWN ====================
+            if (profileWrapper && profileDropdown) {
+                profileWrapper.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    profileDropdown.classList.toggle('show');
+                });
+                document.addEventListener('click', function(e) {
+                    if (profileDropdown.classList.contains('show') && !profileWrapper.contains(e.target)) {
+                        profileDropdown.classList.remove('show');
+                    }
+                });
+            }
+
+            // ==================== DARK MODE ====================
+            function initDarkMode() {
+                const isDark = localStorage.getItem('darkMode') === 'true';
+                if (isDark) {
+                    document.body.classList.add('dark-mode');
+                    if (darkModeToggle) darkModeToggle.checked = true;
+                }
+                if (darkModeToggle) {
+                    darkModeToggle.addEventListener('change', function() {
+                        if (this.checked) {
+                            document.body.classList.add('dark-mode');
+                            localStorage.setItem('darkMode', 'true');
+                        } else {
+                            document.body.classList.remove('dark-mode');
+                            localStorage.setItem('darkMode', 'false');
+                        }
+                    });
+                }
+            }
+
+            // ==================== CHARTS ====================
+            function initCharts() {
+                // User Distribution Chart
+                const distCtx = document.getElementById('userDistributionChart');
+                if (distCtx && window.userData) {
+                    new Chart(distCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Students', 'Research Advisers', 'Deans', 'Librarians', 'Coordinators', 'Admins'],
+                            datasets: [{
+                                data: [
+                                    window.userData.stats.students || 0,
+                                    window.userData.stats.research_advisers || 0,
+                                    window.userData.stats.deans || 0,
+                                    window.userData.stats.librarians || 0,
+                                    window.userData.stats.coordinators || 0,
+                                    window.userData.stats.admins || 0
+                                ],
+                                backgroundColor: ['#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#e67e22', '#d32f2f'],
+                                borderWidth: 0,
+                                cutout: '65%'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: {
+                                    position: 'bottom',
+                                    labels: { font: { size: 11 } }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(ctx) {
+                                            const val = ctx.raw || 0;
+                                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                            const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+                                            return `${ctx.label}: ${val} (${pct}%)`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Registration Trend Chart
+                const regCtx = document.getElementById('registrationChart');
+                if (regCtx && window.userData) {
+                    new Chart(regCtx, {
+                        type: 'line',
+                        data: {
+                            labels: window.userData.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                            datasets: [{
+                                label: 'New Users',
+                                data: window.userData.monthlyData || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                                borderColor: '#dc2626',
+                                backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                                borderWidth: 2,
+                                pointBackgroundColor: '#dc2626',
+                                pointBorderColor: 'white',
+                                pointRadius: 4,
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    ticks: { stepSize: 1, precision: 0 },
+                                    title: { display: true, text: 'Number of Users', font: { size: 10 } }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+
+            // ==================== INITIALIZE ====================
+            initDarkMode();
+            initCharts();
+
+            console.log('Admin Dashboard Initialized - Menu Bar Style Sidebar with Theses');
+        });
     </script>
-    <script src="js/admindashboard.js"></script>
 </body>
 </html>

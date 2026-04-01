@@ -385,13 +385,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-project-diagram"></i>
                 <span>Projects</span>
             </a>
-            <a href="dean.php?section=defenses" class="nav-item <?= $section == 'defenses' ? 'active' : '' ?>">
-                <i class="fas fa-calendar-check"></i>
-                <span>Defenses</span>
-            </a>
             <a href="dean.php?section=archive" class="nav-item <?= $section == 'archive' ? 'active' : '' ?>">
                 <i class="fas fa-archive"></i>
-                <span>Archive</span>
+                <span>Archived</span>
             </a>
             <a href="dean.php?section=reports" class="nav-item <?= $section == 'reports' ? 'active' : '' ?>">
                 <i class="fas fa-chart-bar"></i>
