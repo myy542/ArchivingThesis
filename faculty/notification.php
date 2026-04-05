@@ -60,7 +60,7 @@ try {
 
 $unreadCount = 0;
 try {
-    $countQuery = "SELECT COUNT(*) as total FROM notification_table WHERE user_id = ? AND status = 'unread'";
+    $countQuery = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status = 'unread'";
     $stmt = $conn->prepare($countQuery);
     $stmt->bind_param("i", $user_id);
     $stmt->execute();

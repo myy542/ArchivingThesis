@@ -2,6 +2,9 @@
 session_start();
 include("../config/db.php");
 
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 // Check if user is logged in
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'coordinator') {
     header("Location: /ArchivingThesis/authentication/login.php");
@@ -14,12 +17,63 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
-// Sample feedback data
-$feedbacks = [
-    ['id' => 1, 'thesis' => 'Impact of AI on education', 'message' => 'Please revise the methodology section. The research methodology needs more detail on data collection and analysis procedures.', 'date' => '2026-03-01', 'read' => false],
-    ['id' => 2, 'thesis' => 'Blockchain for voting', 'message' => 'Add more recent references. The literature review should include papers from 2024-2025.', 'date' => '2026-02-28', 'read' => false],
-    ['id' => 3, 'thesis' => 'Low-cost water filter', 'message' => 'Your abstract needs to be more concise. Please limit to 250 words and include key findings.', 'date' => '2026-02-27', 'read' => true],
-];
+// Get feedback from database
+$feedbacks = [];
+
+// Check if feedback table exists
+$check_feedback_table = $conn->query("SHOW TABLES LIKE 'feedback'");
+if ($check_feedback_table && $check_feedback_table->num_rows > 0) {
+    $feedback_query = "SELECT f.*, t.title as thesis_title 
+                       FROM feedback f 
+                       LEFT JOIN theses t ON f.thesis_id = t.thesis_id 
+                       WHERE f.coordinator_id = ? 
+                       ORDER BY f.created_at DESC";
+    $feedback_stmt = $conn->prepare($feedback_query);
+    $feedback_stmt->bind_param("i", $user_id);
+    $feedback_stmt->execute();
+    $feedback_result = $feedback_stmt->get_result();
+    
+    while ($row = $feedback_result->fetch_assoc()) {
+        $feedbacks[] = [
+            'id' => $row['id'],
+            'thesis_id' => $row['thesis_id'],
+            'thesis' => $row['thesis_title'] ?? 'Unknown Thesis',
+            'message' => $row['message'],
+            'date' => $row['created_at'],
+            'read' => $row['is_read'] == 1
+        ];
+    }
+    $feedback_stmt->close();
+}
+
+// If no feedback table or no data, use empty array
+// No hardcoded data anymore
+
+// Handle delete feedback
+if (isset($_GET['delete']) && isset($_GET['id'])) {
+    $delete_id = intval($_GET['id']);
+    $delete_query = "DELETE FROM feedback WHERE id = ? AND coordinator_id = ?";
+    $delete_stmt = $conn->prepare($delete_query);
+    $delete_stmt->bind_param("ii", $delete_id, $user_id);
+    $delete_stmt->execute();
+    $delete_stmt->close();
+    
+    header("Location: myFeedback.php?deleted=1");
+    exit;
+}
+
+// Handle mark as read
+if (isset($_GET['mark_read']) && isset($_GET['id'])) {
+    $read_id = intval($_GET['id']);
+    $read_query = "UPDATE feedback SET is_read = 1 WHERE id = ? AND coordinator_id = ?";
+    $read_stmt = $conn->prepare($read_query);
+    $read_stmt->bind_param("ii", $read_id, $user_id);
+    $read_stmt->execute();
+    $read_stmt->close();
+    
+    header("Location: myFeedback.php");
+    exit;
+}
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -51,12 +105,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             overflow-x: hidden;
         }
 
-        /* Top Navigation */
+        /* Top Navigation - full width */
         .top-nav {
             position: fixed;
             top: 0;
             right: 0;
-            left: 280px;
+            left: 0;
             height: 70px;
             background: white;
             display: flex;
@@ -65,7 +119,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             padding: 0 32px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             z-index: 99;
-            transition: left 0.3s ease;
             border-bottom: 1px solid #fee2e2;
         }
 
@@ -75,8 +128,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             gap: 24px;
         }
 
+        /* Hamburger - ALWAYS VISIBLE */
         .hamburger {
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -230,19 +284,23 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             border-color: #fee2e2;
         }
 
-        /* Sidebar */
+        /* Sidebar - COLLAPSIBLE (hidden by default) */
         .sidebar {
             position: fixed;
             top: 0;
-            left: 0;
+            left: -300px;
             width: 280px;
             height: 100%;
             background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%);
             display: flex;
             flex-direction: column;
-            z-index: 100;
-            transition: transform 0.3s ease;
+            z-index: 1000;
+            transition: left 0.3s ease;
             box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        .sidebar.open {
+            left: 0;
         }
 
         .logo-container {
@@ -344,9 +402,25 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: white;
         }
 
-        /* Main Content */
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 999;
+            display: none;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* Main Content - full width */
         .main-content {
-            margin-left: 280px;
+            margin-left: 0;
             margin-top: 70px;
             padding: 32px;
             transition: margin-left 0.3s ease;
@@ -409,6 +483,26 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             font-size: 0.8rem;
             color: #6b7280;
             margin-top: 4px;
+        }
+
+        /* Alert Message */
+        .alert {
+            padding: 12px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .alert-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border: 1px solid #a5d6a7;
+        }
+
+        .alert i {
+            font-size: 1.2rem;
         }
 
         /* Feedback List */
@@ -524,7 +618,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: #6b7280;
         }
 
-        .delete-btn {
+        .action-btn {
             display: inline-flex;
             align-items: center;
             gap: 6px;
@@ -538,7 +632,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             transition: all 0.2s;
         }
 
-        .delete-btn:hover {
+        .action-btn:hover {
             background: #fee2e2;
             transform: scale(1.02);
         }
@@ -562,40 +656,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             font-size: 0.9rem;
         }
 
-        /* Sidebar Overlay */
-        .sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.4);
-            z-index: 99;
-            display: none;
-        }
-
-        .sidebar-overlay.show {
-            display: block;
-        }
-
         /* Responsive */
         @media (max-width: 768px) {
             .top-nav {
                 left: 0;
                 padding: 0 16px;
-            }
-            
-            .hamburger {
-                display: flex;
-            }
-            
-            .sidebar {
-                transform: translateX(-100%);
-                transition: transform 0.3s ease;
-            }
-            
-            .sidebar.open {
-                transform: translateX(0);
             }
             
             .main-content {
@@ -715,12 +780,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             background: #3d3d3d;
         }
 
-        body.dark-mode .delete-btn {
+        body.dark-mode .action-btn {
             background: #3d3d3d;
             color: #fecaca;
         }
 
-        body.dark-mode .delete-btn:hover {
+        body.dark-mode .action-btn:hover {
             background: #4a4a4a;
         }
     </style>
@@ -736,7 +801,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="logo">Thesis<span>Manager</span></div>
             <div class="search-area">
                 <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search feedback...">
+                <input type="text" id="searchInput" placeholder="Search feedback...">
             </div>
         </div>
         <div class="nav-right">
@@ -801,6 +866,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <h2>My Feedback</h2>
         </div>
 
+        <?php if (isset($_GET['deleted'])): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <span>Feedback deleted successfully!</span>
+        </div>
+        <?php endif; ?>
+
         <!-- Statistics Cards -->
         <div class="stats-grid">
             <div class="stat-card">
@@ -827,11 +899,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </div>
 
         <!-- Feedback List -->
-        <div class="feedback-list">
+        <div class="feedback-list" id="feedbackList">
             <?php if (empty($feedbacks)): ?>
                 <div class="empty-state">
                     <i class="fas fa-comment-slash"></i>
-                    <p>No feedback sent yet.</p>
+                    <p>No feedback sent yet. When you request revisions for a thesis, feedback will appear here.</p>
                 </div>
             <?php else: ?>
                 <?php foreach ($feedbacks as $feedback): ?>
@@ -848,14 +920,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         </div>
                         <div class="feedback-message">
                             <i class="fas fa-quote-left"></i>
-                            <p><?= htmlspecialchars($feedback['message']) ?></p>
+                            <p><?= nl2br(htmlspecialchars($feedback['message'])) ?></p>
                         </div>
                         <div class="feedback-actions">
-                            <span class="status-badge <?= $feedback['read'] ? 'read' : 'unread' ?>">
-                                <i class="fas <?= $feedback['read'] ? 'fa-check-circle' : 'fa-circle' ?>"></i>
-                                <?= $feedback['read'] ? 'Read' : 'Unread' ?>
-                            </span>
-                            <a href="notification_handler.php?action=delete_feedback&id=<?= $feedback['id'] ?>" class="delete-btn" onclick="return confirm('Are you sure you want to delete this feedback?')">
+                            <?php if (!$feedback['read']): ?>
+                                <a href="myFeedback.php?mark_read=1&id=<?= $feedback['id'] ?>" class="action-btn">
+                                    <i class="fas fa-check-circle"></i> Mark as Read
+                                </a>
+                            <?php endif; ?>
+                            <a href="myFeedback.php?delete=1&id=<?= $feedback['id'] ?>" class="action-btn" onclick="return confirm('Are you sure you want to delete this feedback?')">
                                 <i class="fas fa-trash-alt"></i> Delete
                             </a>
                         </div>
@@ -873,18 +946,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         const profileWrapper = document.getElementById('profileWrapper');
         const profileDropdown = document.getElementById('profileDropdown');
         const darkModeToggle = document.getElementById('darkmode');
-        const searchInput = document.querySelector('.search-area input');
+        const searchInput = document.getElementById('searchInput');
 
-        // Toggle Sidebar
-        function toggleSidebar() {
-            sidebar.classList.toggle('open');
-            if (sidebar.classList.contains('open')) {
-                sidebarOverlay.classList.add('show');
-                document.body.style.overflow = 'hidden';
-            } else {
-                sidebarOverlay.classList.remove('show');
-                document.body.style.overflow = '';
-            }
+        // ==================== SIDEBAR FUNCTIONS ====================
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeSidebar() {
@@ -893,7 +961,30 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             document.body.style.overflow = '';
         }
 
-        // Toggle Profile Dropdown
+        function toggleSidebar(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (sidebar.classList.contains('open')) closeSidebar();
+                if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+        });
+
+        // ==================== PROFILE DROPDOWN ====================
         function toggleProfileDropdown(e) {
             e.stopPropagation();
             profileDropdown.classList.toggle('show');
@@ -905,112 +996,54 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
 
-        // Search functionality
-        function handleSearch() {
-            const term = searchInput.value.toLowerCase();
-            const feedbackItems = document.querySelectorAll('.feedback-item');
-            
-            feedbackItems.forEach(item => {
-                const title = item.querySelector('.thesis-title h3')?.textContent.toLowerCase() || '';
-                const message = item.querySelector('.feedback-message p')?.textContent.toLowerCase() || '';
-                
-                if (title.includes(term) || message.includes(term)) {
-                    item.style.display = '';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
+        if (profileWrapper) {
+            profileWrapper.addEventListener('click', toggleProfileDropdown);
+            document.addEventListener('click', closeProfileDropdown);
         }
 
-        // Dark Mode
+        // ==================== DARK MODE ====================
         function initDarkMode() {
             const isDark = localStorage.getItem('darkMode') === 'true';
             if (isDark) {
                 document.body.classList.add('dark-mode');
                 if (darkModeToggle) darkModeToggle.checked = true;
-                applyDarkMode();
             }
             if (darkModeToggle) {
                 darkModeToggle.addEventListener('change', function() {
                     if (this.checked) {
                         document.body.classList.add('dark-mode');
                         localStorage.setItem('darkMode', 'true');
-                        applyDarkMode();
                     } else {
                         document.body.classList.remove('dark-mode');
                         localStorage.setItem('darkMode', 'false');
-                        removeDarkMode();
                     }
                 });
             }
         }
 
-        function applyDarkMode() {
-            const style = document.createElement('style');
-            style.id = 'darkModeStyle';
-            style.textContent = `
-                body.dark-mode { background: #1a1a1a; }
-                body.dark-mode .top-nav { background: #2d2d2d; border-bottom-color: #991b1b; }
-                body.dark-mode .logo { color: #fecaca; }
-                body.dark-mode .search-area { background: #3d3d3d; }
-                body.dark-mode .search-area input { background: #3d3d3d; color: white; }
-                body.dark-mode .profile-name { color: #fecaca; }
-                body.dark-mode .stat-card { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .stat-content h3 { color: #fecaca; }
-                body.dark-mode .feedback-item { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .feedback-item.unread { background: #2a2a2a; }
-                body.dark-mode .thesis-title h3 { color: #fecaca; }
-                body.dark-mode .feedback-message { background: #3d3d3d; }
-                body.dark-mode .feedback-message p { color: #cbd5e1; }
-                body.dark-mode .empty-state { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-dropdown { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-dropdown a { color: #e5e7eb; }
-                body.dark-mode .delete-btn { background: #3d3d3d; color: #fecaca; }
-            `;
-            if (!document.getElementById('darkModeStyle')) {
-                document.head.appendChild(style);
-            }
-        }
-
-        function removeDarkMode() {
-            const style = document.getElementById('darkModeStyle');
-            if (style) style.remove();
-        }
-
-        // Event Listeners
-        if (hamburgerBtn) {
-            hamburgerBtn.addEventListener('click', toggleSidebar);
-        }
-
-        if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', closeSidebar);
-        }
-
-        if (profileWrapper) {
-            profileWrapper.addEventListener('click', toggleProfileDropdown);
-            document.addEventListener('click', closeProfileDropdown);
-        }
-
+        // ==================== SEARCH FUNCTIONALITY ====================
         if (searchInput) {
-            searchInput.addEventListener('input', handleSearch);
+            searchInput.addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                const feedbackItems = document.querySelectorAll('.feedback-item');
+                
+                feedbackItems.forEach(item => {
+                    const title = item.querySelector('.thesis-title h3')?.textContent.toLowerCase() || '';
+                    const message = item.querySelector('.feedback-message p')?.textContent.toLowerCase() || '';
+                    
+                    if (title.includes(term) || message.includes(term)) {
+                        item.style.display = '';
+                    } else {
+                        item.style.display = 'none';
+                    }
+                });
+            });
         }
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            initDarkMode();
-            
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-            });
-            
-            window.addEventListener('resize', function() {
-                if (window.innerWidth > 768 && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-            });
-        });
+        // ==================== INITIALIZE ====================
+        initDarkMode();
+        
+        console.log('My Feedback Page Initialized - Menu Bar Style Sidebar');
     </script>
 </body>
 </html>

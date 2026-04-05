@@ -15,6 +15,10 @@ $archive = new ArchiveManager($conn);
 $faculty_id = (int)$_SESSION["user_id"];
 $thesis_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
+// Check if link column exists in notification_table
+$check_link_column = $conn->query("SHOW COLUMNS FROM notification_table LIKE 'link'");
+$has_link_column = $check_link_column && $check_link_column->num_rows > 0;
+
 // HANDLE ARCHIVE REQUEST
 if(isset($_POST['archive_thesis'])) {
     $archive_thesis_id = $_POST['thesis_id'];
@@ -327,8 +331,35 @@ if (isset($_POST['action'])) {
                 $certStmt->bind_param("iis", $thesis_id, $thesis['user_id'], $certFileName);
                 $certStmt->execute();
                 $certStmt->close();
+                
+                // ==================== SEND NOTIFICATION TO RESEARCH COORDINATOR ====================
+                // Get all research coordinators (role_id = 6)
+                $coordinator_query = "SELECT user_id FROM user_table WHERE role_id = 6";
+                $coordinator_result = $conn->query($coordinator_query);
+                
+                if ($coordinator_result && $coordinator_result->num_rows > 0) {
+                    $thesis_title = $thesis['title'];
+                    $student_name = $thesis['first_name'] . ' ' . $thesis['last_name'];
+                    $faculty_name = $first . ' ' . $last;
+                    
+                    $notifMessage = "📢 New thesis approved for forwarding: \"" . $thesis_title . "\" by student " . $student_name . ". Approved by faculty: " . $faculty_name . ". Please review and forward to Dean.";
+                    
+                    while ($coordinator = $coordinator_result->fetch_assoc()) {
+                        $coordinator_id = $coordinator['user_id'];
+                        
+                        // Insert into notification_table
+                        $notifQuery = "INSERT INTO notification_table (user_id, thesis_id, message, status, created_at) 
+                                      VALUES (?, ?, ?, 'unread', NOW())";
+                        $stmt = $conn->prepare($notifQuery);
+                        $stmt->bind_param("iis", $coordinator_id, $thesis_id, $notifMessage);
+                        $stmt->execute();
+                        $stmt->close();
+                    }
+                }
+                // ==================== END OF COORDINATOR NOTIFICATION ====================
             }
             
+            // Send notification to student
             if (!empty($feedback)) {
                 $shortFeedback = strlen($feedback) > 50 ? substr($feedback, 0, 50) . "..." : $feedback;
                 $notifMessage = "Your thesis '" . $thesis['title'] . "' has been " . $status . " with feedback: \"" . $shortFeedback . "\"";
@@ -353,7 +384,7 @@ if (isset($_POST['action'])) {
             
             $message = "Thesis successfully " . $status . "!";
             if ($action == 'approve') {
-                $message .= " Certificate has been generated.";
+                $message .= " Certificate has been generated and coordinator has been notified.";
             }
             $messageType = "success";
             

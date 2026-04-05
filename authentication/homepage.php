@@ -303,13 +303,8 @@ $is_logged_in = isset($_SESSION['user_id']) || isset($_SESSION['username']);
                 <li><a href="homepage.php">Home</a></li>
                 <li><a href="browse.php">Browse</a></li>
                 <li><a href="about.php">About</a></li>
-                <?php if ($is_logged_in): ?>
-                    <li><a href="../student/studentDashboard.php">Dashboard</a></li>
-                    <li><a href="logout.php">Logout</a></li>
-                <?php else: ?>
-                    <li><a href="login.php">Login</a></li>
-                    <li><a href="register.php">Register</a></li>
-                <?php endif; ?>
+                <li><a href="login.php">Login</a></li>
+                <li><a href="register.php">Register</a></li>
             </ul>
         </div>
     </nav>

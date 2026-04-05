@@ -105,12 +105,12 @@ $conn->close();
             overflow-x: hidden;
         }
 
-        /* Top Navigation - Red Theme */
+        /* Top Navigation - full width */
         .top-nav {
             position: fixed;
             top: 0;
             right: 0;
-            left: 280px;
+            left: 0;
             height: 70px;
             background: white;
             display: flex;
@@ -129,9 +129,9 @@ $conn->close();
             gap: 20px;
         }
 
-        /* HAMBURGER MENU - THREE LINES */
+        /* HAMBURGER MENU - ALWAYS VISIBLE */
         .hamburger {
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -263,19 +263,23 @@ $conn->close();
             border-color: #fee2e2;
         }
 
-        /* Sidebar - Red Theme */
+        /* Sidebar - COLLAPSIBLE (hidden by default) */
         .sidebar {
             position: fixed;
             top: 0;
-            left: 0;
+            left: -300px;
             width: 280px;
             height: 100%;
             background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%);
             display: flex;
             flex-direction: column;
-            z-index: 100;
-            transition: transform 0.3s ease;
-            transform: translateX(0);
+            z-index: 1000;
+            transition: left 0.3s ease;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        .sidebar.open {
+            left: 0;
         }
 
         .logo-container {
@@ -376,9 +380,25 @@ $conn->close();
             color: white;
         }
 
-        /* Main Content */
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* Main Content - full width */
         .main-content {
-            margin-left: 280px;
+            margin-left: 0;
             margin-top: 70px;
             padding: 32px;
             transition: margin-left 0.3s ease;
@@ -521,52 +541,18 @@ $conn->close();
             transform: translateY(-2px);
         }
 
-        /* Sidebar Overlay */
-        .sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 98;
-            display: none;
-        }
-
-        .sidebar-overlay.show {
-            display: block;
-        }
-
-        /* =========================================== */
-        /* MOBILE RESPONSIVE - HAMBURGER MENU */
-        /* =========================================== */
+        /* Responsive */
         @media (max-width: 768px) {
             .top-nav {
                 left: 0;
                 padding: 0 15px;
             }
             
-            /* SHOW HAMBURGER MENU ON MOBILE */
-            .hamburger {
-                display: flex;
-            }
-            
-            /* HIDE SIDEBAR BY DEFAULT ON MOBILE */
-            .sidebar {
-                transform: translateX(-100%);
-            }
-            
-            /* SHOW SIDEBAR WHEN OPEN CLASS IS ADDED */
-            .sidebar.open {
-                transform: translateX(0);
-            }
-            
-            /* ADJUST MAIN CONTENT MARGIN */
             .main-content {
                 margin-left: 0;
+                padding: 20px;
             }
             
-            /* PROFILE CONTAINER STACK ON MOBILE */
             .profile-container {
                 flex-direction: column;
             }
@@ -580,17 +566,14 @@ $conn->close();
                 gap: 15px;
             }
             
-            /* HIDE SEARCH ON MOBILE */
             .search-area {
                 display: none;
             }
             
-            /* HIDE PROFILE NAME ON MOBILE */
             .profile-name {
                 display: none;
             }
             
-            /* ADJUST CARD PADDING */
             .profile-main {
                 padding: 24px;
             }
@@ -615,6 +598,63 @@ $conn->close();
                 height: 80px;
                 font-size: 2rem;
             }
+        }
+
+        /* Dark Mode */
+        body.dark-mode {
+            background: #1a1a1a;
+        }
+        body.dark-mode .top-nav {
+            background: #2d2d2d;
+            border-bottom-color: #991b1b;
+        }
+        body.dark-mode .logo {
+            color: #fecaca;
+        }
+        body.dark-mode .search-area {
+            background: #3d3d3d;
+        }
+        body.dark-mode .search-area input {
+            background: #3d3d3d;
+            color: white;
+        }
+        body.dark-mode .profile-name {
+            color: #fecaca;
+        }
+        body.dark-mode .profile-sidebar {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .profile-sidebar h3 {
+            color: #fecaca;
+        }
+        body.dark-mode .profile-main {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .profile-main h2 {
+            color: #fecaca;
+            border-bottom-color: #991b1b;
+        }
+        body.dark-mode .info-value {
+            color: #fecaca;
+        }
+        body.dark-mode .about-section {
+            border-top-color: #991b1b;
+        }
+        body.dark-mode .about-section h3 {
+            color: #fecaca;
+        }
+        body.dark-mode .member-since {
+            border-top-color: #991b1b;
+            color: #9ca3af;
+        }
+        body.dark-mode .profile-dropdown {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .profile-dropdown a {
+            color: #fecaca;
         }
     </style>
 </head>
@@ -747,99 +787,52 @@ $conn->close();
         const profileDropdown = document.getElementById('profileDropdown');
         const darkModeToggle = document.getElementById('darkmode');
 
-        // Toggle Sidebar - Three Lines Menu
-        function toggleSidebar() {
-            sidebar.classList.toggle('open');
-            if (sidebar.classList.contains('open')) {
-                sidebarOverlay.classList.add('show');
-                document.body.style.overflow = 'hidden';
-            } else {
-                sidebarOverlay.classList.remove('show');
-                document.body.style.overflow = '';
-            }
+        // ==================== SIDEBAR FUNCTIONS ====================
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
         }
 
-        // Close Sidebar
         function closeSidebar() {
             sidebar.classList.remove('open');
             sidebarOverlay.classList.remove('show');
             document.body.style.overflow = '';
         }
 
-        // Toggle Profile Dropdown
+        function toggleSidebar(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (sidebar.classList.contains('open')) closeSidebar();
+                if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+        });
+
+        // ==================== PROFILE DROPDOWN ====================
         function toggleProfileDropdown(e) {
             e.stopPropagation();
             profileDropdown.classList.toggle('show');
         }
 
-        // Close Profile Dropdown when clicking outside
         function closeProfileDropdown(e) {
-            if (profileWrapper && !profileWrapper.contains(e.target)) {
+            if (!profileWrapper.contains(e.target)) {
                 profileDropdown.classList.remove('show');
             }
-        }
-
-        // Dark Mode Toggle
-        function initDarkMode() {
-            const isDark = localStorage.getItem('darkMode') === 'true';
-            if (isDark) {
-                document.body.classList.add('dark-mode');
-                if (darkModeToggle) darkModeToggle.checked = true;
-                applyDarkMode();
-            }
-            if (darkModeToggle) {
-                darkModeToggle.addEventListener('change', function() {
-                    if (this.checked) {
-                        document.body.classList.add('dark-mode');
-                        localStorage.setItem('darkMode', 'true');
-                        applyDarkMode();
-                    } else {
-                        document.body.classList.remove('dark-mode');
-                        localStorage.setItem('darkMode', 'false');
-                        removeDarkMode();
-                    }
-                });
-            }
-        }
-
-        function applyDarkMode() {
-            const style = document.createElement('style');
-            style.id = 'darkModeStyle';
-            style.textContent = `
-                body.dark-mode { background: #1a1a1a; }
-                body.dark-mode .top-nav { background: #2d2d2d; border-bottom-color: #991b1b; }
-                body.dark-mode .logo { color: #fecaca; }
-                body.dark-mode .search-area { background: #3d3d3d; }
-                body.dark-mode .search-area input { background: #3d3d3d; color: white; }
-                body.dark-mode .profile-name { color: #fecaca; }
-                body.dark-mode .profile-sidebar { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-sidebar h3 { color: #fecaca; }
-                body.dark-mode .profile-main { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-main h2 { color: #fecaca; border-bottom-color: #991b1b; }
-                body.dark-mode .info-value { color: #fecaca; }
-                body.dark-mode .about-section { border-top-color: #991b1b; }
-                body.dark-mode .about-section h3 { color: #fecaca; }
-                body.dark-mode .member-since { border-top-color: #991b1b; color: #9ca3af; }
-                body.dark-mode .profile-dropdown { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .profile-dropdown a { color: #fecaca; }
-            `;
-            if (!document.getElementById('darkModeStyle')) {
-                document.head.appendChild(style);
-            }
-        }
-
-        function removeDarkMode() {
-            const style = document.getElementById('darkModeStyle');
-            if (style) style.remove();
-        }
-
-        // Event Listeners
-        if (hamburgerBtn) {
-            hamburgerBtn.addEventListener('click', toggleSidebar);
-        }
-
-        if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', closeSidebar);
         }
 
         if (profileWrapper) {
@@ -847,24 +840,30 @@ $conn->close();
             document.addEventListener('click', closeProfileDropdown);
         }
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            initDarkMode();
-            
-            // Close sidebar on escape key
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-            });
-            
-            // Close sidebar when window is resized to desktop
-            window.addEventListener('resize', function() {
-                if (window.innerWidth > 768 && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-            });
-        });
+        // ==================== DARK MODE ====================
+        function initDarkMode() {
+            const isDark = localStorage.getItem('darkMode') === 'true';
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+                if (darkModeToggle) darkModeToggle.checked = true;
+            }
+            if (darkModeToggle) {
+                darkModeToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        document.body.classList.add('dark-mode');
+                        localStorage.setItem('darkMode', 'true');
+                    } else {
+                        document.body.classList.remove('dark-mode');
+                        localStorage.setItem('darkMode', 'false');
+                    }
+                });
+            }
+        }
+
+        // ==================== INITIALIZE ====================
+        initDarkMode();
+        
+        console.log('Profile Page Initialized - Menu Bar Style Sidebar');
     </script>
 </body>
 </html>

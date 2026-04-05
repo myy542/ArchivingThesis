@@ -30,7 +30,7 @@ if ($action === 'mark_read') {
     $notification_id = isset($data['notification_id']) ? (int)$data['notification_id'] : 0;
     
     if ($notification_id > 0) {
-        $query = "UPDATE notification_table SET status = 'read' WHERE notification_id = ? AND user_id = ?";
+        $query = "UPDATE notifications SET status = 'read' WHERE notification_id = ? AND user_id = ?";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("ii", $notification_id, $user_id);
         
@@ -45,7 +45,7 @@ if ($action === 'mark_read') {
     }
 } 
 elseif ($action === 'mark_all_read') {
-    $query = "UPDATE notification_table SET status = 'read' WHERE user_id = ? AND status = 'unread'";
+    $query = "UPDATE notifications SET status = 'read' WHERE user_id = ? AND status = 'unread'";
     $stmt = $conn->prepare($query);
     $stmt->bind_param("i", $user_id);
     

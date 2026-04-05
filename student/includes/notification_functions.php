@@ -43,7 +43,7 @@ function getUserData($conn, $user_id) {
 }
 
 function markNotificationAsRead($conn, $notification_id, $user_id) {
-    $updateQuery = "UPDATE notification_table SET status = 'read' WHERE notification_id = ? AND user_id = ?";
+    $updateQuery = "UPDATE notifications SET status = 'read' WHERE notification_id = ? AND user_id = ?";
     $stmt = $conn->prepare($updateQuery);
     $stmt->bind_param("ii", $notification_id, $user_id);
     $stmt->execute();
@@ -52,7 +52,7 @@ function markNotificationAsRead($conn, $notification_id, $user_id) {
 }
 
 function markAllNotificationsAsRead($conn, $user_id) {
-    $updateQuery = "UPDATE notification_table SET status = 'read' WHERE user_id = ? AND status = 'unread'";
+    $updateQuery = "UPDATE notifications SET status = 'read' WHERE user_id = ? AND status = 'unread'";
     $stmt = $conn->prepare($updateQuery);
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
@@ -61,7 +61,7 @@ function markAllNotificationsAsRead($conn, $user_id) {
 }
 
 function deleteNotification($conn, $notification_id, $user_id) {
-    $deleteQuery = "DELETE FROM notification_table WHERE notification_id = ? AND user_id = ?";
+    $deleteQuery = "DELETE FROM notifications WHERE notification_id = ? AND user_id = ?";
     $stmt = $conn->prepare($deleteQuery);
     $stmt->bind_param("ii", $notification_id, $user_id);
     $stmt->execute();
@@ -75,7 +75,7 @@ function getNotifications($conn, $user_id) {
 
     try {
         // Get unread count
-        $countQuery = "SELECT COUNT(*) as total FROM notification_table WHERE user_id = ? AND status = 'unread'";
+        $countQuery = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status = 'unread'";
         $stmt = $conn->prepare($countQuery);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -85,7 +85,7 @@ function getNotifications($conn, $user_id) {
         
         // Get all notifications with thesis details
         $query = "SELECT n.*, t.title as thesis_title 
-                  FROM notification_table n
+                  FROM notifications n
                   LEFT JOIN thesis_table t ON n.thesis_id = t.thesis_id
                   WHERE n.user_id = ? 
                   ORDER BY n.created_at DESC";

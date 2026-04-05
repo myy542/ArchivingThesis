@@ -2,6 +2,9 @@
 session_start();
 include("../config/db.php");
 
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 // Check if user is logged in
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'coordinator') {
     header("Location: /ArchivingThesis/authentication/login.php");
@@ -19,49 +22,40 @@ $department_name = "Research Department";
 $position = "Research Coordinator";
 $assigned_date = date('F Y');
 
-// Sample forwarded theses data
-$forwardedTheses = [
-    [
-        'id' => 1,
-        'title' => 'Impact of Artificial Intelligence on Modern Education',
-        'author' => 'Juan Dela Cruz',
-        'date_forwarded' => '2026-03-15',
-        'status' => 'Pending',
-        'abstract' => 'This study explores how AI technologies are transforming educational practices, focusing on personalized learning and assessment methods.'
-    ],
-    [
-        'id' => 2,
-        'title' => 'Blockchain Technology for Secure Voting Systems',
-        'author' => 'Maria Santos',
-        'date_forwarded' => '2026-03-14',
-        'status' => 'Under Review',
-        'abstract' => 'This research investigates the application of blockchain technology in creating secure and transparent voting mechanisms.'
-    ],
-    [
-        'id' => 3,
-        'title' => 'Sustainable Low-Cost Water Filtration Systems',
-        'author' => 'Jose Rizal',
-        'date_forwarded' => '2026-03-12',
-        'status' => 'Approved',
-        'abstract' => 'This paper presents a novel approach to water filtration using locally available materials for rural communities.'
-    ],
-    [
-        'id' => 4,
-        'title' => 'Mental Health Awareness Among College Students',
-        'author' => 'Ana Reyes',
-        'date_forwarded' => '2026-03-10',
-        'status' => 'Pending',
-        'abstract' => 'This study examines the prevalence of mental health issues and the effectiveness of intervention programs.'
-    ],
-    [
-        'id' => 5,
-        'title' => 'Renewable Energy Solutions for Rural Communities',
-        'author' => 'Carlos Garcia',
-        'date_forwarded' => '2026-03-08',
-        'status' => 'Approved',
-        'abstract' => 'This research explores sustainable energy solutions for off-grid rural communities.'
-    ]
-];
+// Get forwarded theses from database (status = 'Approved' or 'Forwarded to Dean')
+$forwardedTheses = [];
+$theses_query = "SELECT thesis_id, title, author, department, year, status, created_at 
+                 FROM theses 
+                 WHERE status = 'Approved' OR status = 'Forwarded to Dean' 
+                 ORDER BY created_at DESC";
+$theses_result = $conn->query($theses_query);
+
+if ($theses_result && $theses_result->num_rows > 0) {
+    while ($row = $theses_result->fetch_assoc()) {
+        $status = $row['status'];
+        $status_display = $status;
+        
+        // Map status to display
+        if ($status == 'Approved') {
+            $status_display = 'Approved';
+        } elseif ($status == 'Forwarded to Dean') {
+            $status_display = 'Under Review';
+        } else {
+            $status_display = 'Pending';
+        }
+        
+        $forwardedTheses[] = [
+            'id' => $row['thesis_id'],
+            'title' => $row['title'],
+            'author' => $row['author'] ?? 'Unknown',
+            'department' => $row['department'] ?? 'Unknown',
+            'year' => $row['year'] ?? 'N/A',
+            'date_forwarded' => $row['created_at'],
+            'status' => $status_display,
+            'raw_status' => $row['status']
+        ];
+    }
+}
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -93,12 +87,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             overflow-x: hidden;
         }
 
-        /* Top Navigation */
+        /* Top Navigation - full width */
         .top-nav {
             position: fixed;
             top: 0;
             right: 0;
-            left: 280px;
+            left: 0;
             height: 70px;
             background: white;
             display: flex;
@@ -107,7 +101,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             padding: 0 32px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             z-index: 99;
-            transition: left 0.3s ease;
             border-bottom: 1px solid #fee2e2;
         }
 
@@ -117,8 +110,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             gap: 24px;
         }
 
+        /* Hamburger - ALWAYS VISIBLE */
         .hamburger {
-            display: none;
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -272,19 +266,23 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             border-color: #fee2e2;
         }
 
-        /* Sidebar */
+        /* Sidebar - COLLAPSIBLE (hidden by default) */
         .sidebar {
             position: fixed;
             top: 0;
-            left: 0;
+            left: -300px;
             width: 280px;
             height: 100%;
             background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%);
             display: flex;
             flex-direction: column;
-            z-index: 100;
-            transition: transform 0.3s ease;
+            z-index: 1000;
+            transition: left 0.3s ease;
             box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+        }
+
+        .sidebar.open {
+            left: 0;
         }
 
         .logo-container {
@@ -386,9 +384,25 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: white;
         }
 
-        /* Main Content */
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 999;
+            display: none;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* Main Content - full width */
         .main-content {
-            margin-left: 280px;
+            margin-left: 0;
             margin-top: 70px;
             padding: 32px;
             transition: margin-left 0.3s ease;
@@ -598,25 +612,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             transform: translateY(-2px);
         }
 
-        .btn-track {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            background: #dc2626;
-            color: white;
-            text-decoration: none;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .btn-track:hover {
-            background: #991b1b;
-            transform: translateY(-2px);
-        }
-
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -633,40 +628,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             font-size: 0.9rem;
         }
 
-        /* Sidebar Overlay */
-        .sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.4);
-            z-index: 99;
-            display: none;
-        }
-
-        .sidebar-overlay.show {
-            display: block;
-        }
-
         /* Responsive */
         @media (max-width: 768px) {
             .top-nav {
                 left: 0;
                 padding: 0 16px;
-            }
-            
-            .hamburger {
-                display: flex;
-            }
-            
-            .sidebar {
-                transform: translateX(-100%);
-                transition: transform 0.3s ease;
-            }
-            
-            .sidebar.open {
-                transform: translateX(0);
             }
             
             .main-content {
@@ -886,7 +852,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="stat-card">
                 <div class="stat-icon"><i class="fas fa-clock"></i></div>
                 <div class="stat-content">
-                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Pending'; })) ?></h3>
+                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Under Review' || $t['status'] == 'Pending'; })) ?></h3>
                     <p>Pending Review</p>
                 </div>
             </div>
@@ -926,22 +892,33 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         </thead>
                     <tbody>
                         <?php foreach ($forwardedTheses as $thesis): ?>
-                            <tr data-status="<?= strtolower(str_replace(' ', '-', $thesis['status'])) ?>">
+                            <?php 
+                                $status_class = 'pending';
+                                $status_icon = 'fa-clock';
+                                if ($thesis['status'] == 'Approved') {
+                                    $status_class = 'approved';
+                                    $status_icon = 'fa-check-circle';
+                                } elseif ($thesis['status'] == 'Under Review') {
+                                    $status_class = 'under-review';
+                                    $status_icon = 'fa-spinner';
+                                } else {
+                                    $status_class = 'pending';
+                                    $status_icon = 'fa-clock';
+                                }
+                            ?>
+                            <tr data-status="<?= $status_class ?>">
                                 <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
                                 <td><?= htmlspecialchars($thesis['author']) ?></td>
                                 <td><?= date('M d, Y', strtotime($thesis['date_forwarded'])) ?></td>
                                 <td>
-                                    <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $thesis['status'])) ?>">
-                                        <i class="fas <?= $thesis['status'] == 'Pending' ? 'fa-clock' : ($thesis['status'] == 'Under Review' ? 'fa-spinner' : 'fa-check-circle') ?>"></i>
+                                    <span class="status-badge status-<?= $status_class ?>">
+                                        <i class="fas <?= $status_icon ?>"></i>
                                         <?= $thesis['status'] ?>
                                     </span>
                                 </td>
                                 <td class="action-buttons">
                                     <a href="viewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
                                         <i class="fas fa-eye"></i> View
-                                    </a>
-                                    <a href="trackThesis.php?id=<?= $thesis['id'] ?>" class="btn-track">
-                                        <i class="fas fa-chart-line"></i> Track
                                     </a>
                                 </td>
                             </tr>
@@ -964,16 +941,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         const filterBtns = document.querySelectorAll('.filter-btn');
         const tableRows = document.querySelectorAll('#thesesTable tbody tr');
 
-        // Toggle Sidebar
-        function toggleSidebar() {
-            sidebar.classList.toggle('open');
-            if (sidebar.classList.contains('open')) {
-                sidebarOverlay.classList.add('show');
-                document.body.style.overflow = 'hidden';
-            } else {
-                sidebarOverlay.classList.remove('show');
-                document.body.style.overflow = '';
-            }
+        // ==================== SIDEBAR FUNCTIONS ====================
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeSidebar() {
@@ -982,7 +954,30 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             document.body.style.overflow = '';
         }
 
-        // Toggle Profile Dropdown
+        function toggleSidebar(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (sidebar.classList.contains('open')) closeSidebar();
+                if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+        });
+
+        // ==================== PROFILE DROPDOWN ====================
         function toggleProfileDropdown(e) {
             e.stopPropagation();
             profileDropdown.classList.toggle('show');
@@ -994,7 +989,32 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
 
-        // Filter Function
+        if (profileWrapper) {
+            profileWrapper.addEventListener('click', toggleProfileDropdown);
+            document.addEventListener('click', closeProfileDropdown);
+        }
+
+        // ==================== DARK MODE ====================
+        function initDarkMode() {
+            const isDark = localStorage.getItem('darkMode') === 'true';
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+                if (darkModeToggle) darkModeToggle.checked = true;
+            }
+            if (darkModeToggle) {
+                darkModeToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        document.body.classList.add('dark-mode');
+                        localStorage.setItem('darkMode', 'true');
+                    } else {
+                        document.body.classList.remove('dark-mode');
+                        localStorage.setItem('darkMode', 'false');
+                    }
+                });
+            }
+        }
+
+        // ==================== FILTER FUNCTION ====================
         function filterTable(status) {
             tableRows.forEach(row => {
                 if (status === 'all' || row.dataset.status === status) {
@@ -1005,86 +1025,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             });
         }
 
-        // Search Function
-        function handleSearch() {
-            const term = searchInput.value.toLowerCase();
-            tableRows.forEach(row => {
-                const title = row.cells[0]?.textContent.toLowerCase() || '';
-                const author = row.cells[1]?.textContent.toLowerCase() || '';
-                
-                if (title.includes(term) || author.includes(term)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        }
-
-        // Dark Mode
-        function initDarkMode() {
-            const isDark = localStorage.getItem('darkMode') === 'true';
-            if (isDark) {
-                document.body.classList.add('dark-mode');
-                if (darkModeToggle) darkModeToggle.checked = true;
-                applyDarkMode();
-            }
-            if (darkModeToggle) {
-                darkModeToggle.addEventListener('change', function() {
-                    if (this.checked) {
-                        document.body.classList.add('dark-mode');
-                        localStorage.setItem('darkMode', 'true');
-                        applyDarkMode();
-                    } else {
-                        document.body.classList.remove('dark-mode');
-                        localStorage.setItem('darkMode', 'false');
-                        removeDarkMode();
-                    }
-                });
-            }
-        }
-
-        function applyDarkMode() {
-            const style = document.createElement('style');
-            style.id = 'darkModeStyle';
-            style.textContent = `
-                body.dark-mode .stat-card { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .stat-content h3 { color: #fecaca; }
-                body.dark-mode .forwarded-list { background: #2d2d2d; border-color: #991b1b; }
-                body.dark-mode .forwarded-table th { background: #3d3d3d; color: #fecaca; border-bottom-color: #991b1b; }
-                body.dark-mode .forwarded-table td { color: #e5e7eb; border-bottom-color: #3d3d3d; }
-                body.dark-mode .forwarded-table tr:hover { background: #3d3d3d; }
-                body.dark-mode .filter-btn { background: #2d2d2d; border-color: #991b1b; color: #9ca3af; }
-                body.dark-mode .filter-btn.active { background: #dc2626; color: white; }
-                body.dark-mode .btn-view { background: #3d3d3d; color: #fecaca; }
-            `;
-            if (!document.getElementById('darkModeStyle')) {
-                document.head.appendChild(style);
-            }
-        }
-
-        function removeDarkMode() {
-            const style = document.getElementById('darkModeStyle');
-            if (style) style.remove();
-        }
-
-        // Event Listeners
-        if (hamburgerBtn) {
-            hamburgerBtn.addEventListener('click', toggleSidebar);
-        }
-
-        if (sidebarOverlay) {
-            sidebarOverlay.addEventListener('click', closeSidebar);
-        }
-
-        if (profileWrapper) {
-            profileWrapper.addEventListener('click', toggleProfileDropdown);
-            document.addEventListener('click', closeProfileDropdown);
-        }
-
-        if (searchInput) {
-            searchInput.addEventListener('input', handleSearch);
-        }
-
         filterBtns.forEach(btn => {
             btn.addEventListener('click', function() {
                 filterBtns.forEach(b => b.classList.remove('active'));
@@ -1093,22 +1033,27 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             });
         });
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            initDarkMode();
-            
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
+        // ==================== SEARCH FUNCTION ====================
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                tableRows.forEach(row => {
+                    const title = row.cells[0]?.textContent.toLowerCase() || '';
+                    const author = row.cells[1]?.textContent.toLowerCase() || '';
+                    
+                    if (title.includes(term) || author.includes(term)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
             });
-            
-            window.addEventListener('resize', function() {
-                if (window.innerWidth > 768 && sidebar.classList.contains('open')) {
-                    closeSidebar();
-                }
-            });
-        });
+        }
+
+        // ==================== INITIALIZE ====================
+        initDarkMode();
+        
+        console.log('Forwarded Theses Page Initialized - Menu Bar Style Sidebar');
     </script>
 </body>
 </html>

@@ -131,13 +131,13 @@ $students_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 2";
 $students_result = $conn->query($students_query);
 $stats['total_students'] = ($students_result && $students_result->num_rows > 0) ? ($students_result->fetch_assoc())['count'] : 342;
 
-// Get theses statistics
+// Get theses statistics - FIXED: using correct column names
 if ($theses_table_exists) {
-    $active_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'In Progress' OR status = 'Ongoing'";
+    $active_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Pending' OR status = 'Approved'";
     $active_result = $conn->query($active_query);
     $stats['active_projects'] = ($active_result && $active_result->num_rows > 0) ? ($active_result->fetch_assoc())['count'] : 87;
     
-    $pending_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Pending' OR status = 'For Review'";
+    $pending_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Pending'";
     $pending_result = $conn->query($pending_query);
     $stats['pending_reviews'] = ($pending_result && $pending_result->num_rows > 0) ? ($pending_result->fetch_assoc())['count'] : 23;
     
@@ -145,17 +145,12 @@ if ($theses_table_exists) {
     $approved_result = $conn->query($approved_query);
     $stats['approved_this_sem'] = ($approved_result && $approved_result->num_rows > 0) ? ($approved_result->fetch_assoc())['count'] : 15;
     
-    $forwarded_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Forwarded to Dean' OR status = 'Dean Review'";
-    $forwarded_result = $conn->query($forwarded_query);
-    $stats['forwarded_to_dean'] = ($forwarded_result && $forwarded_result->num_rows > 0) ? ($forwarded_result->fetch_assoc())['count'] : 15;
-    
-    $rejected_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Rejected'";
-    $rejected_result = $conn->query($rejected_query);
-    $stats['rejected'] = ($rejected_result && $rejected_result->num_rows > 0) ? ($rejected_result->fetch_assoc())['count'] : 8;
-    
     $archived_query = "SELECT COUNT(*) as count FROM theses WHERE status = 'Archived'";
     $archived_result = $conn->query($archived_query);
     $stats['archived'] = ($archived_result && $archived_result->num_rows > 0) ? ($archived_result->fetch_assoc())['count'] : 45;
+    
+    $stats['forwarded_to_dean'] = $stats['pending_reviews'];
+    $stats['rejected'] = 0;
 } else {
     $stats['active_projects'] = 87;
     $stats['pending_reviews'] = 23;
@@ -165,18 +160,19 @@ if ($theses_table_exists) {
     $stats['archived'] = 45;
 }
 
-// Get theses ready for archiving
+// Get theses ready for archiving - FIXED: using correct column names (title, author, department)
 $ready_for_archive = [];
 if ($theses_table_exists) {
-    $archive_query = "SELECT thesis_id, title, student_name, adviser_name, created_at FROM theses WHERE status = 'Approved' ORDER BY created_at DESC LIMIT 10";
+    $archive_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'Approved' ORDER BY created_at DESC LIMIT 10";
     $archive_result = $conn->query($archive_query);
     if ($archive_result && $archive_result->num_rows > 0) {
         while ($row = $archive_result->fetch_assoc()) {
             $ready_for_archive[] = [
                 'id' => $row['thesis_id'],
                 'title' => $row['title'],
-                'student' => $row['student_name'] ?? 'Unknown',
-                'adviser' => $row['adviser_name'] ?? 'Unknown',
+                'author' => $row['author'] ?? 'Unknown',
+                'department' => $row['department'] ?? 'Unknown',
+                'year' => $row['year'] ?? 'N/A',
                 'date' => isset($row['created_at']) ? date('M d, Y', strtotime($row['created_at'])) : date('M d, Y')
             ];
         }
@@ -186,26 +182,27 @@ if ($theses_table_exists) {
 // If no ready for archive, use sample
 if (empty($ready_for_archive)) {
     $ready_for_archive = [
-        ['id' => 1, 'title' => 'AI-Powered Thesis Recommendation System', 'student' => 'Maria Santos', 'adviser' => 'Prof. Juan Dela Cruz', 'date' => 'Mar 15, 2026'],
-        ['id' => 2, 'title' => 'Mobile App for Campus Navigation', 'student' => 'Juan Dela Cruz', 'adviser' => 'Dr. Ana Lopez', 'date' => 'Mar 14, 2026'],
-        ['id' => 3, 'title' => 'E-Learning Platform for Mathematics', 'student' => 'Ana Lopez', 'adviser' => 'Prof. Pedro Reyes', 'date' => 'Mar 12, 2026'],
-        ['id' => 4, 'title' => 'IoT-Based Classroom Monitoring', 'student' => 'Pedro Reyes', 'adviser' => 'Dr. Lisa Garcia', 'date' => 'Mar 10, 2026'],
-        ['id' => 5, 'title' => 'Blockchain for Student Records', 'student' => 'Lisa Garcia', 'adviser' => 'Prof. Mark Santiago', 'date' => 'Mar 8, 2026'],
+        ['id' => 1, 'title' => 'AI-Powered Thesis Recommendation System', 'author' => 'Maria Santos', 'department' => 'College of Computer Studies', 'year' => '2025', 'date' => 'Mar 15, 2026'],
+        ['id' => 2, 'title' => 'Mobile App for Campus Navigation', 'author' => 'Juan Dela Cruz', 'department' => 'College of Engineering', 'year' => '2025', 'date' => 'Mar 14, 2026'],
+        ['id' => 3, 'title' => 'E-Learning Platform for Mathematics', 'author' => 'Ana Lopez', 'department' => 'College of Education', 'year' => '2025', 'date' => 'Mar 12, 2026'],
+        ['id' => 4, 'title' => 'IoT-Based Classroom Monitoring', 'author' => 'Pedro Reyes', 'department' => 'College of Engineering', 'year' => '2025', 'date' => 'Mar 10, 2026'],
+        ['id' => 5, 'title' => 'Blockchain for Student Records', 'author' => 'Lisa Garcia', 'department' => 'College of Computer Studies', 'year' => '2025', 'date' => 'Mar 8, 2026'],
     ];
 }
 
-// Get archived theses
+// Get archived theses - FIXED: using correct column names
 $archived_theses = [];
 if ($theses_table_exists) {
-    $archived_query = "SELECT thesis_id, title, student_name, adviser_name, created_at FROM theses WHERE status = 'Archived' ORDER BY created_at DESC LIMIT 10";
+    $archived_query = "SELECT thesis_id, title, author, department, year, created_at FROM theses WHERE status = 'Archived' ORDER BY created_at DESC LIMIT 10";
     $archived_result = $conn->query($archived_query);
     if ($archived_result && $archived_result->num_rows > 0) {
         while ($row = $archived_result->fetch_assoc()) {
             $archived_theses[] = [
                 'id' => $row['thesis_id'],
                 'title' => $row['title'],
-                'student' => $row['student_name'] ?? 'Unknown',
-                'adviser' => $row['adviser_name'] ?? 'Unknown',
+                'author' => $row['author'] ?? 'Unknown',
+                'department' => $row['department'] ?? 'Unknown',
+                'year' => $row['year'] ?? 'N/A',
                 'date' => isset($row['created_at']) ? date('M d, Y', strtotime($row['created_at'])) : date('M d, Y')
             ];
         }
@@ -215,11 +212,11 @@ if ($theses_table_exists) {
 // If no archived theses, use sample
 if (empty($archived_theses)) {
     $archived_theses = [
-        ['id' => 101, 'title' => 'Machine Learning in Healthcare', 'student' => 'John Doe', 'adviser' => 'Dr. Maria Santos', 'date' => 'Mar 1, 2026'],
-        ['id' => 102, 'title' => 'Renewable Energy Solutions', 'student' => 'Jane Smith', 'adviser' => 'Prof. Juan Cruz', 'date' => 'Feb 28, 2026'],
-        ['id' => 103, 'title' => 'Digital Marketing Strategies', 'student' => 'Mike Johnson', 'adviser' => 'Dr. Ana Reyes', 'date' => 'Feb 25, 2026'],
-        ['id' => 104, 'title' => 'Climate Change Impact', 'student' => 'Sarah Williams', 'adviser' => 'Prof. Pedro Garcia', 'date' => 'Feb 20, 2026'],
-        ['id' => 105, 'title' => 'Online Learning Effectiveness', 'student' => 'David Brown', 'adviser' => 'Dr. Lisa Villanueva', 'date' => 'Feb 15, 2026'],
+        ['id' => 101, 'title' => 'Machine Learning in Healthcare', 'author' => 'John Doe', 'department' => 'College of Computer Studies', 'year' => '2024', 'date' => 'Mar 1, 2026'],
+        ['id' => 102, 'title' => 'Renewable Energy Solutions', 'author' => 'Jane Smith', 'department' => 'College of Engineering', 'year' => '2024', 'date' => 'Feb 28, 2026'],
+        ['id' => 103, 'title' => 'Digital Marketing Strategies', 'author' => 'Mike Johnson', 'department' => 'College of Business Administration', 'year' => '2024', 'date' => 'Feb 25, 2026'],
+        ['id' => 104, 'title' => 'Climate Change Impact', 'author' => 'Sarah Williams', 'department' => 'College of Arts and Sciences', 'year' => '2024', 'date' => 'Feb 20, 2026'],
+        ['id' => 105, 'title' => 'Online Learning Effectiveness', 'author' => 'David Brown', 'department' => 'College of Education', 'year' => '2024', 'date' => 'Feb 15, 2026'],
     ];
 }
 
@@ -1310,12 +1307,10 @@ $conn->close();
                 padding: 0 16px;
             }
             
-            /* SHOW THE HAMBURGER MENU */
             .hamburger {
                 display: flex !important;
             }
             
-            /* HIDE SIDEBAR BY DEFAULT ON MOBILE */
             .sidebar {
                 transform: translateX(-100%) !important;
                 transition: transform 0.3s ease;
@@ -1323,17 +1318,14 @@ $conn->close();
                 z-index: 1000;
             }
             
-            /* SHOW SIDEBAR WHEN OPEN CLASS IS ADDED */
             .sidebar.open {
                 transform: translateX(0) !important;
             }
             
-            /* SHOW OVERLAY WHEN SIDEBAR IS OPEN */
             .sidebar-overlay.show {
                 display: block;
             }
             
-            /* ADJUST MAIN CONTENT MARGIN */
             .main-content {
                 margin-left: 0;
                 padding: 20px;
@@ -1580,7 +1572,7 @@ $conn->close();
                     <div class="profile-avatar" id="profileAvatar"><?= htmlspecialchars($initials) ?></div>
                 </div>
                 <div class="profile-dropdown" id="profileDropdown">
-                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="librarian_profile.php"><i class="fas fa-user"></i> Profile</a>
                     <a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a>
                     <a href="#"><i class="fas fa-cog"></i> Settings</a>
                     <hr>
@@ -1603,7 +1595,7 @@ $conn->close();
             </a>
             <a href="librarian_dashboard.php?section=archive" class="nav-item <?= $section == 'archive' ? 'active' : '' ?>">
                 <i class="fas fa-archive"></i>
-                <span>Archive</span>
+                <span>Archived</span>
             </a>
             <a href="librarian_dashboard.php?section=departments" class="nav-item <?= $section == 'departments' ? 'active' : '' ?>">
                 <i class="fas fa-building"></i>
@@ -1692,7 +1684,11 @@ $conn->close();
                 <?php foreach ($ready_for_archive as $thesis): ?>
                 <div class="thesis-card">
                     <div class="thesis-header"><h3><?= htmlspecialchars($thesis['title']) ?></h3><span class="status-badge approved">Approved</span></div>
-                    <div class="thesis-info"><p><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($thesis['student']) ?></p><p><i class="fas fa-chalkboard-user"></i> <?= htmlspecialchars($thesis['adviser']) ?></p><p><i class="fas fa-calendar"></i> <?= $thesis['date'] ?></p></div>
+                    <div class="thesis-info">
+                        <p><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($thesis['author']) ?></p>
+                        <p><i class="fas fa-building"></i> <?= htmlspecialchars($thesis['department']) ?></p>
+                        <p><i class="fas fa-calendar"></i> <?= $thesis['date'] ?></p>
+                    </div>
                     <div class="thesis-actions"><button class="btn-archive" onclick="archiveThesis(<?= $thesis['id'] ?>, '<?= htmlspecialchars($thesis['title']) ?>')"><i class="fas fa-archive"></i> Archive Thesis</button></div>
                 </div>
                 <?php endforeach; ?>
@@ -1704,13 +1700,13 @@ $conn->close();
             <div class="table-responsive">
                 <table class="archived-table">
                     <thead>
-                        <tr><th>Thesis Title</th><th>Student</th><th>Adviser</th><th>Archived Date</th><th>Action</th> </thead>
+                        <tr><th>Thesis Title</th><th>Author</th><th>Department</th><th>Archived Date</th><th>Action</th> </thead>
                     <tbody>
                         <?php foreach ($archived_theses as $thesis): ?>
-                        <tr class="archived-row">        <td><strong><?= htmlspecialchars($thesis['title']) ?></strong>\\         \\<?= htmlspecialchars($thesis['student']) ?>\\         \\<?= htmlspecialchars($thesis['adviser']) ?>\\         \\<?= $thesis['date'] ?>\\         \\<a href="view_thesis.php?id=<?= $thesis['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a>\\       \)
+                        <tr class="archived-row">        <td><strong><?= htmlspecialchars($thesis['title']) ?></strong>\\         \\<?= htmlspecialchars($thesis['author']) ?>\\         \\<?= htmlspecialchars($thesis['department']) ?>\\         \\<?= $thesis['date'] ?>\\         \\<a href="view_thesis.php?id=<?= $thesis['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a>\\       \)
                         <?php endforeach; ?>
                     </tbody>
-                 \\
+                </table>
             </div>
         </div>
 
@@ -1919,10 +1915,10 @@ $conn->close();
                                 <div class="thesis-item-modal">
                                     <div class="thesis-info-modal">
                                         <h4>${escapeHtml(thesis.title)}</h4>
-                                        <p><i class="fas fa-user-graduate"></i> ${escapeHtml(thesis.student)}</p>
-                                        <p><i class="fas fa-chalkboard-user"></i> ${escapeHtml(thesis.adviser)}</p>
+                                        <p><i class="fas fa-user-graduate"></i> ${escapeHtml(thesis.author)}</p>
+                                        <p><i class="fas fa-building"></i> ${escapeHtml(thesis.department)}</p>
                                         <p><i class="fas fa-calendar"></i> ${thesis.date}</p>
-                                        <p><span class="status-badge ${thesis.status}">${thesis.status}</span></p>
+                                        <p><span class="status-badge ${thesis.status.toLowerCase()}">${thesis.status}</span></p>
                                     </div>
                                     <div class="thesis-actions-modal">
                                         <a href="view_thesis.php?id=${thesis.id}" class="btn-view">View</a>

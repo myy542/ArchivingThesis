@@ -41,6 +41,18 @@ $last = $faculty['last_name'] ?? '';
 $fullName = trim($first . ' ' . $last);
 $initials = strtoupper(substr($first, 0, 1) . substr($last, 0, 1));
 
+// Create feedback table if not exists
+$createTable = "CREATE TABLE IF NOT EXISTS feedback_table (
+    feedback_id INT AUTO_INCREMENT PRIMARY KEY,
+    thesis_id INT NOT NULL,
+    faculty_id INT NOT NULL,
+    comments TEXT NOT NULL,
+    feedback_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (thesis_id) REFERENCES theses(thesis_id),
+    FOREIGN KEY (faculty_id) REFERENCES user_table(user_id)
+)";
+$conn->query($createTable);
+
 // Handle form submission - Add new feedback
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['add_feedback'])) {
     $thesis_id = (int)$_POST['thesis_id'];
@@ -55,6 +67,25 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['add_feedback'])) {
             $success = "Feedback added successfully!";
         } else {
             $error = "Error adding feedback: " . $conn->error;
+        }
+        $stmt->close();
+    }
+}
+
+// Handle edit feedback
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['edit_feedback'])) {
+    $feedback_id = (int)$_POST['feedback_id'];
+    $comments = trim($_POST['comments']);
+    
+    if (!empty($feedback_id) && !empty($comments)) {
+        $updateQuery = "UPDATE feedback_table SET comments = ? WHERE feedback_id = ? AND faculty_id = ?";
+        $stmt = $conn->prepare($updateQuery);
+        $stmt->bind_param("sii", $comments, $feedback_id, $faculty_id);
+        
+        if ($stmt->execute()) {
+            $success = "Feedback updated successfully!";
+        } else {
+            $error = "Error updating feedback: " . $conn->error;
         }
         $stmt->close();
     }
@@ -75,11 +106,23 @@ if (isset($_GET['delete'])) {
     $stmt->close();
 }
 
+// Get feedback by ID for editing (AJAX)
+if (isset($_GET['get_feedback'])) {
+    $feedback_id = (int)$_GET['get_feedback'];
+    $getQuery = "SELECT feedback_id, thesis_id, comments FROM feedback_table WHERE feedback_id = ? AND faculty_id = ?";
+    $stmt = $conn->prepare($getQuery);
+    $stmt->bind_param("ii", $feedback_id, $faculty_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $feedback = $result->fetch_assoc();
+    echo json_encode(['success' => true, 'feedback' => $feedback]);
+    exit;
+}
+
 // Get all feedback by this faculty
-$feedbackQuery = "SELECT f.*, t.title as thesis_title, u.first_name as student_first, u.last_name as student_last
+$feedbackQuery = "SELECT f.*, t.title as thesis_title, t.author as student_name
                   FROM feedback_table f
-                  JOIN thesis_table t ON f.thesis_id = t.thesis_id
-                  JOIN user_table u ON t.student_id = u.user_id
+                  JOIN theses t ON f.thesis_id = t.thesis_id
                   WHERE f.faculty_id = ?
                   ORDER BY f.feedback_date DESC";
 $stmt = $conn->prepare($feedbackQuery);
@@ -89,10 +132,7 @@ $feedbackList = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
 // Get pending theses for feedback dropdown
-$pendingQuery = "SELECT t.thesis_id, t.title, u.first_name, u.last_name 
-                 FROM thesis_table t
-                 JOIN user_table u ON t.student_id = u.user_id
-                 WHERE t.status = 'pending'";
+$pendingQuery = "SELECT thesis_id, title, author FROM theses WHERE status = 'Pending'";
 $pendingResult = $conn->query($pendingQuery);
 $pendingTheses = $pendingResult->fetch_all(MYSQLI_ASSOC);
 
@@ -103,7 +143,7 @@ $pageTitle = "My Feedback";
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title><?= $pageTitle ?> - Theses Archiving System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <style>
@@ -114,81 +154,283 @@ $pageTitle = "My Feedback";
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: #f5f5f5;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #fef2f2;
+            color: #1f2937;
+            overflow-x: hidden;
         }
 
-        /* Sidebar styles (same as faculty dashboard) */
+        /* Top Navigation - full width */
+        .top-nav {
+            position: fixed;
+            top: 0;
+            right: 0;
+            left: 0;
+            height: 70px;
+            background: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            z-index: 99;
+            border-bottom: 1px solid #fee2e2;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        /* Hamburger - ALWAYS VISIBLE */
+        .hamburger {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 5px;
+            width: 40px;
+            height: 40px;
+            background: #fef2f2;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger span {
+            display: block;
+            width: 22px;
+            height: 2px;
+            background: #dc2626;
+            border-radius: 2px;
+        }
+
+        .hamburger:hover {
+            background: #fee2e2;
+        }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #991b1b;
+        }
+
+        .logo span {
+            color: #dc2626;
+        }
+
+        .search-area {
+            display: flex;
+            align-items: center;
+            background: #fef2f2;
+            padding: 8px 16px;
+            border-radius: 40px;
+            gap: 10px;
+        }
+
+        .search-area i {
+            color: #dc2626;
+        }
+
+        .search-area input {
+            border: none;
+            background: none;
+            outline: none;
+            font-size: 0.85rem;
+            width: 200px;
+        }
+
+        .nav-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* Profile Dropdown */
+        .profile-wrapper {
+            position: relative;
+        }
+
+        .profile-trigger {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+        }
+
+        .profile-name {
+            font-weight: 500;
+            color: #1f2937;
+        }
+
+        .profile-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #dc2626, #991b1b);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .profile-dropdown {
+            position: absolute;
+            top: 55px;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            min-width: 180px;
+            display: none;
+            overflow: hidden;
+            z-index: 100;
+            border: 1px solid #fee2e2;
+        }
+
+        .profile-dropdown.show {
+            display: block;
+        }
+
+        .profile-dropdown a {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 18px;
+            text-decoration: none;
+            color: #1f2937;
+            transition: 0.2s;
+        }
+
+        .profile-dropdown a:hover {
+            background: #fef2f2;
+        }
+
+        .profile-dropdown hr {
+            margin: 5px 0;
+            border-color: #fee2e2;
+        }
+
+        /* Sidebar - COLLAPSIBLE (hidden by default) */
         .sidebar {
             position: fixed;
             top: 0;
             left: -300px;
             width: 280px;
-            height: 100vh;
-            background: linear-gradient(180deg, #FE4853 0%, #732529 100%);
-            color: white;
+            height: 100%;
+            background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%);
             display: flex;
             flex-direction: column;
             z-index: 1000;
             transition: left 0.3s ease;
-            box-shadow: 5px 0 20px rgba(0,0,0,0.3);
+            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
         }
 
-        .sidebar.show { left: 0; }
+        .sidebar.open {
+            left: 0;
+        }
 
         .sidebar-header {
-            padding: 2rem 1.5rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 28px 24px;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
         }
 
         .sidebar-header h2 {
-            font-size: 1.5rem;
             color: white;
+            font-size: 1.3rem;
+        }
+
+        .sidebar-header p {
+            color: #fecaca;
+            font-size: 0.7rem;
+            margin-top: 5px;
         }
 
         .sidebar-nav {
             flex: 1;
-            padding: 1.5rem 0.5rem;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
         }
 
         .nav-link {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            padding: 0.875rem 1rem;
-            color: rgba(255, 255, 255, 0.9);
+            gap: 14px;
+            padding: 12px 16px;
+            border-radius: 12px;
             text-decoration: none;
-            border-radius: 8px;
+            color: #fecaca;
             transition: all 0.2s;
+            font-weight: 500;
         }
 
-        .nav-link:hover,
+        .nav-link i {
+            width: 22px;
+        }
+
+        .nav-link:hover {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            transform: translateX(5px);
+        }
+
         .nav-link.active {
-            background: rgba(255, 255, 255, 0.3);
+            background: rgba(255,255,255,0.2);
             color: white;
         }
 
         .sidebar-footer {
-            padding: 1.5rem;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px 16px;
+            border-top: 1px solid rgba(255,255,255,0.2);
         }
 
         .logout-btn {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
-            color: rgba(255, 255, 255, 0.9);
+            gap: 12px;
+            padding: 10px 16px;
             text-decoration: none;
-            padding: 0.875rem 1rem;
+            color: #fecaca;
+            border-radius: 10px;
+            transition: 0.2s;
         }
 
-        /* Main Content */
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.15);
+            color: white;
+        }
+
+        /* Sidebar Overlay */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 999;
+            display: none;
+        }
+
+        .sidebar-overlay.show {
+            display: block;
+        }
+
+        /* Main Content - full width */
         .main-content {
             margin-left: 0;
-            min-height: 100vh;
-            padding: 2rem;
+            margin-top: 70px;
+            padding: 32px;
+            transition: margin-left 0.3s ease;
         }
 
+        /* Topbar */
         .topbar {
             display: flex;
             justify-content: space-between;
@@ -197,24 +439,32 @@ $pageTitle = "My Feedback";
             padding: 1rem;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid #fee2e2;
         }
 
-        .topbar h1 { color: #732529; }
+        .topbar h1 {
+            color: #991b1b;
+            font-size: 1.5rem;
+        }
 
-        .user-info { display: flex; align-items: center; gap: 1.5rem; }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
 
         .avatar {
             width: 45px;
             height: 45px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #FE4853, #732529);
+            background: linear-gradient(135deg, #dc2626, #991b1b);
             color: white;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            cursor: pointer;
+            font-size: 1rem;
         }
 
         /* Feedback Container */
@@ -230,8 +480,12 @@ $pageTitle = "My Feedback";
             margin-bottom: 2rem;
         }
 
+        .header-section h2 {
+            color: #991b1b;
+        }
+
         .btn-add {
-            background: #FE4853;
+            background: #dc2626;
             color: white;
             padding: 12px 24px;
             border: none;
@@ -245,7 +499,7 @@ $pageTitle = "My Feedback";
         }
 
         .btn-add:hover {
-            background: #732529;
+            background: #991b1b;
             transform: translateY(-2px);
         }
 
@@ -258,12 +512,14 @@ $pageTitle = "My Feedback";
             right: 0;
             bottom: 0;
             background: rgba(0,0,0,0.5);
-            z-index: 2000;
+            z-index: 1100;
             align-items: center;
             justify-content: center;
         }
 
-        .modal.show { display: flex; }
+        .modal.show {
+            display: flex;
+        }
 
         .modal-content {
             background: white;
@@ -282,12 +538,20 @@ $pageTitle = "My Feedback";
             margin-bottom: 1.5rem;
         }
 
+        .modal-header h2 {
+            color: #991b1b;
+        }
+
         .close-btn {
             background: none;
             border: none;
             font-size: 1.5rem;
             cursor: pointer;
-            color: #6E6E6E;
+            color: #6b7280;
+        }
+
+        .close-btn:hover {
+            color: #dc2626;
         }
 
         .form-group {
@@ -298,16 +562,22 @@ $pageTitle = "My Feedback";
             display: block;
             margin-bottom: 0.5rem;
             font-weight: 600;
-            color: #732529;
+            color: #991b1b;
         }
 
         .form-group select,
         .form-group textarea {
             width: 100%;
             padding: 10px;
-            border: 2px solid #e2e8f0;
+            border: 2px solid #fee2e2;
             border-radius: 6px;
             font-size: 1rem;
+        }
+
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #dc2626;
         }
 
         .form-group textarea {
@@ -316,7 +586,7 @@ $pageTitle = "My Feedback";
         }
 
         .btn-submit {
-            background: #FE4853;
+            background: #dc2626;
             color: white;
             padding: 12px 24px;
             border: none;
@@ -324,6 +594,10 @@ $pageTitle = "My Feedback";
             font-weight: 600;
             cursor: pointer;
             width: 100%;
+        }
+
+        .btn-submit:hover {
+            background: #991b1b;
         }
 
         /* Feedback Cards */
@@ -337,13 +611,15 @@ $pageTitle = "My Feedback";
             background: white;
             border-radius: 12px;
             padding: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid #fee2e2;
             transition: all 0.3s;
         }
 
         .feedback-card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 4px 15px rgba(254,72,83,0.2);
+            box-shadow: 0 4px 15px rgba(220, 38, 38, 0.1);
+            border-color: #dc2626;
         }
 
         .feedback-header {
@@ -354,28 +630,28 @@ $pageTitle = "My Feedback";
         }
 
         .thesis-info h3 {
-            color: #732529;
+            color: #991b1b;
             font-size: 1.1rem;
             margin-bottom: 0.25rem;
         }
 
         .student-name {
-            color: #6E6E6E;
-            font-size: 0.9rem;
-        }
-
-        .feedback-date {
-            color: #6E6E6E;
+            color: #6b7280;
             font-size: 0.85rem;
         }
 
+        .feedback-date {
+            color: #9ca3af;
+            font-size: 0.75rem;
+        }
+
         .feedback-comments {
-            color: #333;
+            color: #4b5563;
             line-height: 1.6;
             margin: 1rem 0;
             padding: 1rem 0;
-            border-top: 1px solid #e2e8f0;
-            border-bottom: 1px solid #e2e8f0;
+            border-top: 1px solid #fee2e2;
+            border-bottom: 1px solid #fee2e2;
         }
 
         .feedback-actions {
@@ -394,8 +670,8 @@ $pageTitle = "My Feedback";
         }
 
         .btn-edit {
-            background: #e2e8f0;
-            color: #475569;
+            background: #fef2f2;
+            color: #dc2626;
         }
 
         .btn-delete {
@@ -403,8 +679,12 @@ $pageTitle = "My Feedback";
             color: #b91c1c;
         }
 
-        .btn-edit:hover { background: #cbd5e1; }
-        .btn-delete:hover { background: #fecaca; }
+        .btn-edit:hover { 
+            background: #fee2e2; 
+        }
+        .btn-delete:hover { 
+            background: #fecaca; 
+        }
 
         /* Alerts */
         .alert {
@@ -430,22 +710,144 @@ $pageTitle = "My Feedback";
             padding: 3rem;
             background: white;
             border-radius: 12px;
-            color: #6E6E6E;
+            border: 1px solid #fee2e2;
+            color: #6b7280;
+        }
+
+        .no-feedback i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #dc2626;
         }
 
         /* Responsive */
         @media (max-width: 768px) {
-            .main-content { padding: 1rem; }
-            .header-section { flex-direction: column; gap: 1rem; }
-            .feedback-grid { grid-template-columns: 1fr; }
+            .top-nav {
+                padding: 0 16px;
+            }
+            .main-content {
+                padding: 20px;
+            }
+            .search-area {
+                display: none;
+            }
+            .profile-name {
+                display: none;
+            }
+            .header-section {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .feedback-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-content {
+                padding: 16px;
+            }
+        }
+
+        /* Dark Mode */
+        body.dark-mode {
+            background: #1a1a1a;
+        }
+        body.dark-mode .top-nav {
+            background: #2d2d2d;
+            border-bottom-color: #991b1b;
+        }
+        body.dark-mode .logo {
+            color: #fecaca;
+        }
+        body.dark-mode .search-area {
+            background: #3d3d3d;
+        }
+        body.dark-mode .search-area input {
+            background: #3d3d3d;
+            color: white;
+        }
+        body.dark-mode .profile-name {
+            color: #fecaca;
+        }
+        body.dark-mode .topbar {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .topbar h1 {
+            color: #fecaca;
+        }
+        body.dark-mode .feedback-card {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .thesis-info h3 {
+            color: #fecaca;
+        }
+        body.dark-mode .feedback-comments {
+            color: #cbd5e1;
+        }
+        body.dark-mode .profile-dropdown {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        body.dark-mode .profile-dropdown a {
+            color: #fecaca;
+        }
+        body.dark-mode .modal-content {
+            background: #2d2d2d;
+        }
+        body.dark-mode .modal-header h2 {
+            color: #fecaca;
+        }
+        body.dark-mode .form-group label {
+            color: #fecaca;
+        }
+        body.dark-mode .form-group select,
+        body.dark-mode .form-group textarea {
+            background: #3d3d3d;
+            border-color: #991b1b;
+            color: white;
+        }
+        body.dark-mode .no-feedback {
+            background: #2d2d2d;
+            border-color: #991b1b;
         }
     </style>
 </head>
 <body>
-    <!-- Sidebar -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <header class="top-nav">
+        <div class="nav-left">
+            <button class="hamburger" id="hamburgerBtn">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="logo">Thesis<span>Manager</span></div>
+            <div class="search-area">
+                <i class="fas fa-search"></i>
+                <input type="text" placeholder="Search...">
+            </div>
+        </div>
+        <div class="nav-right">
+            <div class="profile-wrapper" id="profileWrapper">
+                <div class="profile-trigger">
+                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
+                    <div class="profile-avatar"><?= $initials ?></div>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a>
+                    <hr>
+                    <a href="../authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h2>Theses Archive</h2>
+            <h2>Thesis Manager</h2>
             <p>Faculty Portal</p>
         </div>
         <nav class="sidebar-nav">
@@ -467,12 +869,12 @@ $pageTitle = "My Feedback";
     </aside>
 
     <main class="main-content">
-        <header class="topbar">
+        <div class="topbar">
             <h1>My Feedback</h1>
             <div class="user-info">
                 <div class="avatar"><?= $initials ?></div>
             </div>
-        </header>
+        </div>
 
         <div class="feedback-container">
             <div class="header-section">
@@ -492,7 +894,7 @@ $pageTitle = "My Feedback";
 
             <?php if (empty($feedbackList)): ?>
                 <div class="no-feedback">
-                    <i class="fas fa-comment-dots" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                    <i class="fas fa-comment-dots"></i>
                     <h3>No feedback yet</h3>
                     <p>Click "Add New Feedback" to start providing feedback on theses.</p>
                 </div>
@@ -505,7 +907,7 @@ $pageTitle = "My Feedback";
                                     <h3><?= htmlspecialchars($feedback['thesis_title']) ?></h3>
                                     <div class="student-name">
                                         <i class="fas fa-user"></i> 
-                                        <?= htmlspecialchars($feedback['student_first'] . ' ' . $feedback['student_last']) ?>
+                                        <?= htmlspecialchars($feedback['student_name']) ?>
                                     </div>
                                 </div>
                                 <div class="feedback-date">
@@ -532,6 +934,8 @@ $pageTitle = "My Feedback";
             <?php endif; ?>
         </div>
     </main>
+
+    <!-- Add Feedback Modal -->
     <div class="modal" id="feedbackModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -548,7 +952,7 @@ $pageTitle = "My Feedback";
                         <option value="">-- Choose a thesis --</option>
                         <?php foreach ($pendingTheses as $thesis): ?>
                             <option value="<?= $thesis['thesis_id'] ?>">
-                                <?= htmlspecialchars($thesis['title'] . ' - ' . $thesis['first_name'] . ' ' . $thesis['last_name']) ?>
+                                <?= htmlspecialchars($thesis['title'] . ' - ' . $thesis['author']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -566,13 +970,125 @@ $pageTitle = "My Feedback";
         </div>
     </div>
 
+    <!-- Edit Feedback Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Feedback</h2>
+                <button class="close-btn" onclick="closeEditModal()">&times;</button>
+            </div>
+            
+            <form method="POST">
+                <input type="hidden" name="edit_feedback" value="1">
+                <input type="hidden" name="feedback_id" id="edit_feedback_id">
+                
+                <div class="form-group">
+                    <label>Feedback Comments</label>
+                    <textarea name="comments" id="edit_comments" rows="6" required></textarea>
+                </div>
+                
+                <button type="submit" class="btn-submit">
+                    <i class="fas fa-save"></i> Update Feedback
+                </button>
+            </form>
+        </div>
+    </div>
+
     <script>
+        // DOM Elements
+        const hamburgerBtn = document.getElementById('hamburgerBtn');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+        const profileWrapper = document.getElementById('profileWrapper');
+        const profileDropdown = document.getElementById('profileDropdown');
+        const darkModeToggle = document.getElementById('darkmode');
+
+        // ==================== SIDEBAR FUNCTIONS ====================
+        function openSidebar() {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('show');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+
+        function toggleSidebar(e) {
+            e.stopPropagation();
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                if (sidebar.classList.contains('open')) closeSidebar();
+                if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+                if (document.getElementById('feedbackModal').classList.contains('show')) closeModal();
+                if (document.getElementById('editModal').classList.contains('show')) closeEditModal();
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+        });
+
+        // ==================== PROFILE DROPDOWN ====================
+        function toggleProfileDropdown(e) {
+            e.stopPropagation();
+            profileDropdown.classList.toggle('show');
+        }
+
+        function closeProfileDropdown(e) {
+            if (!profileWrapper.contains(e.target)) {
+                profileDropdown.classList.remove('show');
+            }
+        }
+
+        if (profileWrapper) {
+            profileWrapper.addEventListener('click', toggleProfileDropdown);
+            document.addEventListener('click', closeProfileDropdown);
+        }
+
+        // ==================== DARK MODE ====================
+        function initDarkMode() {
+            const isDark = localStorage.getItem('darkMode') === 'true';
+            if (isDark) {
+                document.body.classList.add('dark-mode');
+                if (darkModeToggle) darkModeToggle.checked = true;
+            }
+            if (darkModeToggle) {
+                darkModeToggle.addEventListener('change', function() {
+                    if (this.checked) {
+                        document.body.classList.add('dark-mode');
+                        localStorage.setItem('darkMode', 'true');
+                    } else {
+                        document.body.classList.remove('dark-mode');
+                        localStorage.setItem('darkMode', 'false');
+                    }
+                });
+            }
+        }
+
+        // ==================== MODAL FUNCTIONS ====================
         function openModal() {
             document.getElementById('feedbackModal').classList.add('show');
         }
 
         function closeModal() {
             document.getElementById('feedbackModal').classList.remove('show');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('show');
         }
 
         function deleteFeedback(id) {
@@ -582,15 +1098,38 @@ $pageTitle = "My Feedback";
         }
 
         function editFeedback(id) {
-            alert('Edit feature coming soon!');
+            fetch('?get_feedback=' + id)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('edit_feedback_id').value = data.feedback.feedback_id;
+                        document.getElementById('edit_comments').value = data.feedback.comments;
+                        document.getElementById('editModal').classList.add('show');
+                    } else {
+                        alert('Error loading feedback');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error loading feedback');
+                });
         }
 
         window.onclick = function(event) {
-            const modal = document.getElementById('feedbackModal');
-            if (event.target == modal) {
+            const addModal = document.getElementById('feedbackModal');
+            const editModal = document.getElementById('editModal');
+            if (event.target == addModal) {
                 closeModal();
             }
+            if (event.target == editModal) {
+                closeEditModal();
+            }
         }
+
+        // ==================== INITIALIZE ====================
+        initDarkMode();
+        
+        console.log('Faculty Feedback Page Initialized - Menu Bar Style Sidebar');
     </script>
 </body>
 </html>

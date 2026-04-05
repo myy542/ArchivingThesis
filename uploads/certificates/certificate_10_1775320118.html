@@ -1,0 +1,167 @@
+
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Thesis Certificate</title>
+                    <style>
+                        body {
+                            font-family: "Times New Roman", Times, serif;
+                            background: #f0f0f0;
+                            margin: 0;
+                            padding: 20px;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 100vh;
+                        }
+                        .certificate {
+                            width: 800px;
+                            background: white;
+                            border: 20px solid #FE4853;
+                            padding: 40px;
+                            position: relative;
+                            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+                        }
+                        .certificate:before {
+                            content: "";
+                            position: absolute;
+                            top: 10px;
+                            left: 10px;
+                            right: 10px;
+                            bottom: 10px;
+                            border: 2px solid #732529;
+                            pointer-events: none;
+                        }
+                        .header {
+                            text-align: center;
+                            margin-bottom: 40px;
+                        }
+                        .header h1 {
+                            color: #FE4853;
+                            font-size: 48px;
+                            margin: 0;
+                            text-transform: uppercase;
+                            letter-spacing: 5px;
+                        }
+                        .header h2 {
+                            color: #732529;
+                            font-size: 24px;
+                            margin: 10px 0 0;
+                            font-style: italic;
+                        }
+                        .content {
+                            text-align: center;
+                            margin: 50px 0;
+                        }
+                        .content p {
+                            font-size: 18px;
+                            color: #333;
+                            line-height: 2;
+                        }
+                        .student-name {
+                            font-size: 36px;
+                            color: #FE4853;
+                            font-weight: bold;
+                            margin: 20px 0;
+                            text-transform: uppercase;
+                            border-bottom: 2px solid #732529;
+                            display: inline-block;
+                            padding-bottom: 10px;
+                        }
+                        .thesis-title {
+                            font-size: 24px;
+                            color: #732529;
+                            font-style: italic;
+                            margin: 20px 0;
+                        }
+                        .date {
+                            font-size: 18px;
+                            color: #666;
+                            margin: 30px 0;
+                        }
+                        .signature {
+                            margin-top: 60px;
+                            display: flex;
+                            justify-content: space-between;
+                        }
+                        .signature-line {
+                            width: 200px;
+                            border-top: 2px solid #333;
+                            margin-top: 40px;
+                        }
+                        .signature-item {
+                            text-align: center;
+                        }
+                        .signature-item p {
+                            margin: 5px 0;
+                            color: #666;
+                        }
+                        .seal {
+                            position: absolute;
+                            bottom: 50px;
+                            right: 50px;
+                            width: 100px;
+                            height: 100px;
+                            border: 3px solid #FE4853;
+                            border-radius: 50%;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            transform: rotate(-15deg);
+                        }
+                        .seal p {
+                            color: #FE4853;
+                            font-size: 14px;
+                            font-weight: bold;
+                            text-align: center;
+                            line-height: 1.4;
+                        }
+                        .footer {
+                            text-align: center;
+                            margin-top: 40px;
+                            color: #999;
+                            font-size: 12px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="certificate">
+                        <div class="header">
+                            <h1>Certificate of Approval</h1>
+                            <h2>Thesis Archiving System</h2>
+                        </div>
+                        
+                        <div class="content">
+                            <p>This is to certify that</p>
+                            <div class="student-name">Mylene Raganas</div>
+                            <p>has successfully completed and defended the thesis entitled</p>
+                            <div class="thesis-title">"student research management and digital storage system"</div>
+                            <p>on this day, <strong>April 04, 2026</strong></p>
+                            <p>and is hereby granted the approval for thesis submission.</p>
+                        </div>
+                        
+                        <div class="signature">
+                            <div class="signature-item">
+                                <div class="signature-line"></div>
+                                <p><strong>catalina sellar</strong></p>
+                                <p>Thesis Adviser</p>
+                            </div>
+                            <div class="signature-item">
+                                <div class="signature-line"></div>
+                                <p><strong>Dean</strong></p>
+                                <p>Graduate School</p>
+                            </div>
+                        </div>
+                        
+                        <div class="seal">
+                            <p>OFFICIAL<br>SEAL</p>
+                        </div>
+                        
+                        <div class="footer">
+                            <p>This certificate is automatically generated by Theses Archiving System</p>
+                            <p>Certificate ID: CERT-000010</p>
+                        </div>
+                    </div>
+                </body>
+                </html>

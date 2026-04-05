@@ -17,7 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) {
     $notification_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
     
     if ($action === 'mark_read' && $notification_id > 0) {
-        $query = "UPDATE notification_table SET status = 'read' WHERE notification_id = ? AND user_id = ?";
+        $query = "UPDATE notifications SET status = 'read' WHERE notification_id = ? AND user_id = ?";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("ii", $notification_id, $user_id);
         $stmt->execute();
@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action'])) {
     }
     
     if ($action === 'mark_all_read') {
-        $query = "UPDATE notification_table SET status = 'read' WHERE user_id = ? AND status = 'unread'";
+        $query = "UPDATE notifications SET status = 'read' WHERE user_id = ? AND status = 'unread'";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notification_id = isset($data['notification_id']) ? (int)$data['notification_id'] : 0;
         
         if ($notification_id > 0) {
-            $query = "UPDATE notification_table SET status = 'read' WHERE notification_id = ? AND user_id = ?";
+            $query = "UPDATE notifications SET status = 'read' WHERE notification_id = ? AND user_id = ?";
             $stmt = $conn->prepare($query);
             $stmt->bind_param("ii", $notification_id, $user_id);
             
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     elseif ($action === 'mark_all_read') {
-        $query = "UPDATE notification_table SET status = 'read' WHERE user_id = ? AND status = 'unread'";
+        $query = "UPDATE notifications SET status = 'read' WHERE user_id = ? AND status = 'unread'";
         $stmt = $conn->prepare($query);
         $stmt->bind_param("i", $user_id);
         

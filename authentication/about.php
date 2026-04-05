@@ -552,29 +552,9 @@ $is_logged_in = isset($_SESSION['user_id']);
             <a href="homepage.php">Home</a>
             <a href="browse.php">Browse</a>
             <a href="about.php" style="color: #ffcdd2; font-weight: 600;">About</a>
-            <?php if ($is_logged_in): ?>
-                <a href="../student/studentDashboard.php">Dashboard</a>
-                <a href="logout.php">Logout</a>
-            <?php else: ?>
-                <a href="login.php">Login</a>
-                <a href="register.php">Register</a>
-            <?php endif; ?>
+            <a href="login.php">Login</a>
+            <a href="register.php">Register</a>
         </div>
-        <?php if ($is_logged_in): ?>
-        <div class="nav-right">
-            <div class="profile-wrapper" id="profileWrapper">
-                <div class="profile-trigger">
-                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
-                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
-                </div>
-                <div class="profile-dropdown" id="profileDropdown">
-                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
-                    <hr>
-                    <a href="logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
     </header>
 
     <main class="main-content">
