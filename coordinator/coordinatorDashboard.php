@@ -48,28 +48,22 @@ $department_name = "Research Department";
 $position = "Research Coordinator";
 $assigned_date = date('F Y');
 
-// ==================== NOTIFICATION SYSTEM - GAMIT ANG NOTIFICATIONS TABLE ====================
-// Check if notifications table exists, if not create it
-$check_notif_table = $conn->query("SHOW TABLES LIKE 'notifications'");
-if (!$check_notif_table || $check_notif_table->num_rows == 0) {
-    $create_notif_table = "
-        CREATE TABLE IF NOT EXISTS notifications (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            thesis_id INT NULL,
-            message TEXT NOT NULL,
-            type VARCHAR(50) DEFAULT 'info',
-            link VARCHAR(255) NULL,
-            is_read TINYINT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX (user_id),
-            INDEX (is_read)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ";
-    $conn->query($create_notif_table);
-}
+// ==================== NOTIFICATION SYSTEM ====================
+// Create notifications table if not exists
+$conn->query("CREATE TABLE IF NOT EXISTS notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    thesis_id INT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'info',
+    link VARCHAR(255) NULL,
+    is_read TINYINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (user_id),
+    INDEX (is_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// GET NOTIFICATION COUNT
+// GET NOTIFICATION COUNT - Unread notifications only
 $notificationCount = 0;
 $notif_query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0";
 $notif_stmt = $conn->prepare($notif_query);
@@ -81,9 +75,9 @@ if ($notif_row = $notif_result->fetch_assoc()) {
 }
 $notif_stmt->close();
 
-// GET RECENT NOTIFICATIONS
+// GET RECENT NOTIFICATIONS - ALL notifications for dropdown
 $recentNotifications = [];
-$notif_list_query = "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10";
+$notif_list_query = "SELECT notification_id as id, user_id, thesis_id, message, type, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10";
 $notif_list_stmt = $conn->prepare($notif_list_query);
 $notif_list_stmt->bind_param("i", $user_id);
 $notif_list_stmt->execute();
@@ -93,24 +87,43 @@ while ($row = $notif_list_result->fetch_assoc()) {
 }
 $notif_list_stmt->close();
 
-// GET FACULTY NOTIFICATIONS (approved theses for forwarding)
-$faculty_notifications = [];
-$notif_faculty_query = "SELECT n.*, t.title as thesis_title 
-                        FROM notifications n
-                        LEFT JOIN theses t ON n.thesis_id = t.thesis_id
-                        WHERE n.user_id = ? AND n.is_read = 0 AND n.message LIKE '%approved for forwarding%'
-                        ORDER BY n.created_at DESC LIMIT 5";
-$notif_faculty_stmt = $conn->prepare($notif_faculty_query);
-$notif_faculty_stmt->bind_param("i", $user_id);
-$notif_faculty_stmt->execute();
-$faculty_notifications = $notif_faculty_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$notif_faculty_stmt->close();
-$faculty_notif_count = count($faculty_notifications);
+// ==================== FUNCTION TO NOTIFY DEAN ====================
+function notifyDean($conn, $thesis_id, $thesis_title, $student_name, $coordinator_name) {
+    $dean_query = "SELECT user_id FROM user_table WHERE role_id = 4";
+    $dean_result = $conn->query($dean_query);
+    
+    if ($dean_result && $dean_result->num_rows > 0) {
+        while ($dean = $dean_result->fetch_assoc()) {
+            $message = "📋 Thesis ready for Dean approval: \"" . $thesis_title . "\" from student " . $student_name . ". Forwarded by Coordinator: " . $coordinator_name;
+            $insert = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'dean_forward', 0, NOW())";
+            $stmt = $conn->prepare($insert);
+            $stmt->bind_param("iis", $dean['user_id'], $thesis_id, $message);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+    return true;
+}
+// ==================== END NOTIFICATION FUNCTIONS ====================
+
+// GET PENDING THESES FROM THESES TABLE (status = 'pending_coordinator')
+$pending_theses = [];
+$pending_query = "SELECT t.*, u.first_name, u.last_name, u.email 
+                  FROM theses t
+                  JOIN user_table u ON t.submitted_by = u.user_id
+                  WHERE t.status = 'pending_coordinator'
+                  ORDER BY t.created_at DESC";
+$pending_result = $conn->query($pending_query);
+if ($pending_result && $pending_result->num_rows > 0) {
+    while ($row = $pending_result->fetch_assoc()) {
+        $pending_theses[] = $row;
+    }
+}
 
 // MARK NOTIFICATION AS READ (via AJAX)
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
-    $update_query = "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("ii", $notif_id, $user_id);
     $update_stmt->execute();
@@ -129,6 +142,40 @@ if (isset($_POST['mark_all_read'])) {
     echo json_encode(['success' => true]);
     exit;
 }
+
+// FORWARD THESIS TO DEAN (via AJAX)
+if (isset($_POST['forward_to_dean']) && isset($_POST['thesis_id'])) {
+    $thesis_id = intval($_POST['thesis_id']);
+    $thesis_title = $_POST['thesis_title'] ?? '';
+    $student_name = $_POST['student_name'] ?? '';
+    $coordinator_name = $fullName;
+    
+    $update_thesis = "UPDATE theses SET status = 'forwarded_to_dean' WHERE thesis_id = ?";
+    $update_stmt = $conn->prepare($update_thesis);
+    $update_stmt->bind_param("i", $thesis_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    
+    notifyDean($conn, $thesis_id, $thesis_title, $student_name, $coordinator_name);
+    
+    echo json_encode(['success' => true, 'message' => 'Thesis forwarded to Dean successfully']);
+    exit;
+}
+
+// REJECT THESIS (via AJAX)
+if (isset($_POST['reject_thesis']) && isset($_POST['thesis_id'])) {
+    $thesis_id = intval($_POST['thesis_id']);
+    $reason = isset($_POST['reason']) ? $_POST['reason'] : 'No reason provided';
+    
+    $update_thesis = "UPDATE theses SET status = 'rejected', feedback = ? WHERE thesis_id = ?";
+    $update_stmt = $conn->prepare($update_thesis);
+    $update_stmt->bind_param("si", $reason, $thesis_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    
+    echo json_encode(['success' => true, 'message' => 'Thesis rejected successfully']);
+    exit;
+}
 // ============================================================
 
 // CHECK THESES TABLE
@@ -138,7 +185,7 @@ if ($check_theses && $check_theses->num_rows > 0) {
     $theses_table_exists = true;
 }
 
-// GET THESIS DATA
+// GET THESIS DATA FOR STATS AND DISPLAY
 $allSubmissions = [
     'pending_coordinator' => [],
     'forwarded_to_dean' => [],
@@ -146,7 +193,10 @@ $allSubmissions = [
 ];
 
 if ($theses_table_exists) {
-    $pending_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'Pending' ORDER BY created_at DESC";
+    $pending_query = "SELECT thesis_id, title, author, department, year, status, created_at 
+                      FROM theses 
+                      WHERE status = 'pending_coordinator'
+                      ORDER BY created_at DESC";
     $pending_result = $conn->query($pending_query);
     if ($pending_result && $pending_result->num_rows > 0) {
         while ($row = $pending_result->fetch_assoc()) {
@@ -159,7 +209,7 @@ if ($theses_table_exists) {
         }
     }
     
-    $forwarded_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'Forwarded to Dean' ORDER BY created_at DESC";
+    $forwarded_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'forwarded_to_dean' ORDER BY created_at DESC";
     $forwarded_result = $conn->query($forwarded_query);
     if ($forwarded_result && $forwarded_result->num_rows > 0) {
         while ($row = $forwarded_result->fetch_assoc()) {
@@ -172,7 +222,7 @@ if ($theses_table_exists) {
         }
     }
     
-    $rejected_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'Archived' ORDER BY created_at DESC";
+    $rejected_query = "SELECT thesis_id, title, author, department, year, status, created_at FROM theses WHERE status = 'rejected' ORDER BY created_at DESC";
     $rejected_result = $conn->query($rejected_query);
     if ($rejected_result && $rejected_result->num_rows > 0) {
         while ($row = $rejected_result->fetch_assoc()) {
@@ -225,7 +275,7 @@ foreach ($monthly_data as $val) {
     }
 }
 
-// Sample data para sa graph kung walay actual data (para dili blanko ang graph)
+// Sample data para sa graph kung walay actual data
 $sample_monthly_data = [3, 4, 5, 6, 8, 10, 12, 9, 7, 5, 4, 2];
 $sample_stats = [
     'forwarded' => 5,
@@ -233,7 +283,6 @@ $sample_stats = [
     'pending'   => 8
 ];
 
-// Gamiton ang sample data kung walay actual data
 if (!$hasMonthlyData) {
     $monthly_data = $sample_monthly_data;
 }
@@ -309,22 +358,46 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .notification-icon i { font-size: 1.2rem; color: #dc2626; }
         .notification-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 0.6rem; font-weight: 600; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
         
-        .notification-dropdown { position: absolute; top: 55px; right: 0; width: 360px; background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: none; overflow: hidden; z-index: 100; border: 1px solid #fee2e2; }
+        .notification-dropdown { 
+            position: absolute; 
+            top: 55px; 
+            right: 0; 
+            width: 380px; 
+            max-width: 90vw;
+            background: white; 
+            border-radius: 16px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15); 
+            display: none; 
+            overflow: hidden; 
+            z-index: 1000; 
+            border: 1px solid #fee2e2; 
+        }
         .notification-dropdown.show { display: block; animation: fadeSlideDown 0.2s ease; }
         .notification-header { padding: 16px 20px; border-bottom: 1px solid #fee2e2; display: flex; justify-content: space-between; align-items: center; }
         .notification-header h3 { font-size: 1rem; font-weight: 600; color: #991b1b; }
-        .mark-all-read { font-size: 0.7rem; color: #dc2626; cursor: pointer; }
+        .mark-all-read { font-size: 0.7rem; color: #dc2626; cursor: pointer; background: none; border: none; }
+        .mark-all-read:hover { text-decoration: underline; }
         .notification-list { max-height: 400px; overflow-y: auto; }
-        .notification-item { display: flex; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #fef2f2; cursor: pointer; transition: background 0.2s; }
+        .notification-item { 
+            display: flex; 
+            gap: 12px; 
+            padding: 12px 20px; 
+            border-bottom: 1px solid #fef2f2; 
+            cursor: pointer; 
+            transition: background 0.2s; 
+            text-decoration: none; 
+            color: inherit;
+        }
         .notification-item:hover { background: #fef2f2; }
         .notification-item.unread { background: #fff5f5; border-left: 3px solid #dc2626; }
         .notification-item.empty { justify-content: center; color: #9ca3af; cursor: default; }
         .notif-icon { width: 36px; height: 36px; background: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #dc2626; }
         .notif-content { flex: 1; }
-        .notif-message { font-size: 0.8rem; color: #1f2937; margin-bottom: 4px; }
+        .notif-message { font-size: 0.8rem; color: #1f2937; margin-bottom: 4px; line-height: 1.4; }
         .notif-time { font-size: 0.65rem; color: #9ca3af; }
         .notification-footer { padding: 12px 20px; border-top: 1px solid #fee2e2; text-align: center; }
         .notification-footer a { color: #dc2626; text-decoration: none; font-size: 0.8rem; }
+        .notification-footer a:hover { text-decoration: underline; }
         
         .profile-wrapper { position: relative; }
         .profile-trigger { display: flex; align-items: center; gap: 12px; cursor: pointer; }
@@ -504,13 +577,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .thesis-meta { display: flex; gap: 15px; font-size: 0.7rem; color: #6b7280; }
         .review-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: #dc2626; color: white; text-decoration: none; border-radius: 30px; font-size: 0.75rem; }
         .review-btn:hover { background: #991b1b; }
+        
         .table-responsive { overflow-x: auto; }
         .theses-table { width: 100%; border-collapse: collapse; }
         .theses-table th { text-align: left; padding: 12px 8px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #fee2e2; }
         .theses-table td { padding: 12px 8px; border-bottom: 1px solid #fef2f2; font-size: 0.85rem; }
         .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
-        .status-badge.pending_coordinator, .status-badge.pending { background: #fef3c7; color: #d97706; }
-        .status-badge.forwarded_to_dean, .status-badge.forwarded { background: #dbeafe; color: #2563eb; }
+        .status-badge.pending_coordinator { background: #fef3c7; color: #d97706; }
+        .status-badge.forwarded_to_dean { background: #dbeafe; color: #2563eb; }
         .status-badge.rejected { background: #fee2e2; color: #dc2626; }
         .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #fef2f2; color: #dc2626; text-decoration: none; border-radius: 20px; font-size: 0.7rem; }
         .btn-view:hover { background: #fee2e2; }
@@ -544,13 +618,15 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             background: #fef2f2;
             border-radius: 16px;
             border-left: 3px solid #dc2626;
+            flex-wrap: wrap;
+            gap: 12px;
         }
         .notification-list-item:hover {
             background: #fee2e2;
-            transform: translateX(5px);
         }
         .notification-info {
             flex: 1;
+            min-width: 200px;
         }
         .notification-message-text {
             font-weight: 500;
@@ -562,22 +638,36 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             font-size: 0.65rem;
             color: #9ca3af;
         }
-        .notification-btn {
-            background: #dc2626;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 20px;
-            text-decoration: none;
-            font-size: 0.7rem;
-            font-weight: 500;
-        }
-        .notification-btn:hover {
-            background: #991b1b;
+        .notification-actions-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
         }
         
         @keyframes fadeSlideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Responsive */
+        /* Toast Message */
+        .toast-message {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: #10b981;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            z-index: 1001;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .toast-message.error {
+            background: #ef4444;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
         @media (max-width: 1024px) { 
             .stats-grid, .charts-row { 
                 grid-template-columns: repeat(2, 1fr); 
@@ -599,6 +689,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .monthly-stats { grid-template-columns: repeat(3, 1fr); }
             .notification-dropdown { width: 320px; right: -20px; }
             .chart-container { height: 220px; }
+            .notification-list-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .notification-actions-group {
+                width: 100%;
+                justify-content: flex-start;
+            }
         }
         
         @media (max-width: 480px) { 
@@ -606,14 +704,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .stat-card { padding: 16px; } 
             .stat-icon { width: 45px; height: 45px; font-size: 1.3rem; } 
             .stat-content h3 { font-size: 1.5rem; } 
-            .monthly-stats { grid-template-columns: repeat(2, 1fr); 
-            gap: 10px;
-        } 
+            .monthly-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; } 
             .chart-container { height: 200px; }
             .status-labels { gap: 16px; }
         }
         
-        /* Dark Mode */
         body.dark-mode { background: #1a1a1a; }
         body.dark-mode .top-nav { background: #2d2d2d; border-bottom-color: #991b1b; }
         body.dark-mode .logo { color: #fecaca; }
@@ -642,6 +737,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         body.dark-mode .chart-card h3 {
             color: #fecaca;
         }
+        body.dark-mode .btn-reject {
+            background: #3d3d3d;
+            color: #fecaca;
+            border-color: #991b1b;
+        }
     </style>
 </head>
 <body>
@@ -655,28 +755,80 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </div>
         <div class="nav-right">
             <div class="notification-container">
-                <div class="notification-icon" id="notificationIcon"><i class="far fa-bell"></i><?php if ($notificationCount > 0): ?><span class="notification-badge"><?= $notificationCount ?></span><?php endif; ?></div>
+                <div class="notification-icon" id="notificationIcon">
+                    <i class="far fa-bell"></i>
+                    <?php if ($notificationCount > 0): ?>
+                        <span class="notification-badge" id="notificationBadge"><?= $notificationCount ?></span>
+                    <?php endif; ?>
+                </div>
                 <div class="notification-dropdown" id="notificationDropdown">
-                    <div class="notification-header"><h3>Notifications</h3><?php if ($notificationCount > 0): ?><span class="mark-all-read" id="markAllRead">Mark all as read</span><?php endif; ?></div>
-                    <div class="notification-list">
+                    <div class="notification-header">
+                        <h3>Notifications</h3>
+                        <?php if ($notificationCount > 0): ?>
+                            <button class="mark-all-read" id="markAllRead">Mark all as read</button>
+                        <?php endif; ?>
+                    </div>
+                    <div class="notification-list" id="notificationList">
                         <?php if (empty($recentNotifications)): ?>
-                            <div class="notification-item empty"><div class="notif-icon"><i class="far fa-bell-slash"></i></div><div class="notif-content"><div class="notif-message">No notifications yet</div></div></div>
+                            <div class="notification-item empty">
+                                <div class="notif-icon"><i class="far fa-bell-slash"></i></div>
+                                <div class="notif-content">
+                                    <div class="notif-message">No notifications yet</div>
+                                </div>
+                            </div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <div class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['id'] ?>">
-                                    <div class="notif-icon"><?php if(strpos($notif['message'], 'submitted') !== false) echo '<i class="fas fa-file-alt"></i>'; elseif(strpos($notif['message'], 'approved') !== false) echo '<i class="fas fa-check-circle"></i>'; elseif(strpos($notif['message'], 'rejected') !== false) echo '<i class="fas fa-times-circle"></i>'; elseif(strpos($notif['message'], 'forwarded') !== false) echo '<i class="fas fa-arrow-right"></i>'; else echo '<i class="fas fa-bell"></i>'; ?></div>
+                                <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['id'] ?>">
+                                    <div class="notif-icon">
+                                        <?php 
+                                        if(strpos($notif['message'], 'submitted') !== false || strpos($notif['message'], 'forwarded') !== false) 
+                                            echo '<i class="fas fa-file-alt"></i>'; 
+                                        elseif(strpos($notif['message'], 'approved') !== false) 
+                                            echo '<i class="fas fa-check-circle"></i>'; 
+                                        elseif(strpos($notif['message'], 'rejected') !== false) 
+                                            echo '<i class="fas fa-times-circle"></i>'; 
+                                        else 
+                                            echo '<i class="fas fa-bell"></i>'; 
+                                        ?>
+                                    </div>
                                     <div class="notif-content">
                                         <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>
-                                        <div class="notif-time"><i class="far fa-clock"></i> <?php $date = new DateTime($notif['created_at']); $now = new DateTime(); $diff = $now->diff($date); if($diff->days == 0) echo 'Today, ' . $date->format('h:i A'); elseif($diff->days == 1) echo 'Yesterday, ' . $date->format('h:i A'); else echo $date->format('M d, Y h:i A'); ?></div>
+                                        <div class="notif-time">
+                                            <i class="far fa-clock"></i> 
+                                            <?php 
+                                            $date = new DateTime($notif['created_at']); 
+                                            $now = new DateTime(); 
+                                            $diff = $now->diff($date); 
+                                            if($diff->days == 0) 
+                                                echo 'Today, ' . $date->format('h:i A'); 
+                                            elseif($diff->days == 1) 
+                                                echo 'Yesterday, ' . $date->format('h:i A'); 
+                                            else 
+                                                echo $date->format('M d, Y h:i A'); 
+                                            ?>
+                                        </div>
                                     </div>
-                                </div>
+                                </a>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </div>
-                    <div class="notification-footer"><a href="notifications.php">View all notifications <i class="fas fa-arrow-right"></i></a></div>
+                    <div class="notification-footer">
+                        <a href="notifications.php">View all notifications <i class="fas fa-arrow-right"></i></a>
+                    </div>
                 </div>
             </div>
-            <div class="profile-wrapper" id="profileWrapper"><div class="profile-trigger"><span class="profile-name"><?= htmlspecialchars($fullName) ?></span><div class="profile-avatar"><?= htmlspecialchars($initials) ?></div></div><div class="profile-dropdown" id="profileDropdown"><a href="profile.php"><i class="fas fa-user"></i> Profile</a><a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a><hr><a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></div></div>
+            <div class="profile-wrapper" id="profileWrapper">
+                <div class="profile-trigger">
+                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
+                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
+                </div>
+                <div class="profile-dropdown" id="profileDropdown">
+                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a>
+                    <hr>
+                    <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -700,26 +852,43 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="coordinator-info"><div class="coordinator-name"><?= htmlspecialchars($fullName) ?></div><div class="coordinator-position"><?= htmlspecialchars($position) ?></div><div class="coordinator-since">Since <?= $assigned_date ?></div></div>
         </div>
 
-        <!-- ==================== NOTIFICATIONS FROM FACULTY SECTION ==================== -->
-        <?php if (!empty($faculty_notifications)): ?>
+        <!-- ==================== PENDING THESES FROM FACULTY SECTION ==================== -->
+        <?php if (!empty($pending_theses)): ?>
         <div class="notification-card">
-            <h3><i class="fas fa-bell"></i> Pending Theses for Dean Forwarding (<?= $faculty_notif_count ?>)</h3>
-            <div class="notification-item-list">
-                <?php foreach ($faculty_notifications as $notif): ?>
-                <div class="notification-list-item">
+            <h3><i class="fas fa-bell"></i> Pending Theses for Dean Forwarding (<?= count($pending_theses) ?>)</h3>
+            <div class="notification-item-list" id="facultyNotificationsList">
+                <?php foreach ($pending_theses as $thesis): ?>
+                <div class="notification-list-item" data-thesis-id="<?= $thesis['thesis_id'] ?>" data-thesis-title="<?= htmlspecialchars($thesis['title']) ?>" data-student-name="<?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?>">
                     <div class="notification-info">
                         <div class="notification-message-text">
-                            <?= htmlspecialchars($notif['message']) ?>
+                            📢 <strong><?= htmlspecialchars($thesis['title']) ?></strong><br>
+                            Student: <?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?>
                         </div>
                         <div class="notification-time">
-                            <i class="far fa-clock"></i> <?= date('M d, Y h:i A', strtotime($notif['created_at'])) ?>
+                            <i class="far fa-clock"></i> Submitted: <?= date('M d, Y', strtotime($thesis['created_at'])) ?>
                         </div>
                     </div>
-                    <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-btn">
-                        Review <i class="fas fa-arrow-right"></i>
-                    </a>
+                    <div class="notification-actions-group">
+                        <button class="btn-forward" onclick="forwardToDean(this)">Forward to Dean <i class="fas fa-arrow-right"></i></button>
+                        <button class="btn-reject" onclick="showRejectReason(this)">Reject <i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="reject-reason" style="display: none; width: 100%;">
+                        <input type="text" placeholder="Enter rejection reason..." class="reject-input">
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <button class="btn-reject" onclick="confirmReject(this)">Confirm Reject</button>
+                            <button class="btn-forward" onclick="cancelReject(this)">Cancel</button>
+                        </div>
+                    </div>
                 </div>
                 <?php endforeach; ?>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="notification-card">
+            <h3><i class="fas fa-bell"></i> Pending Theses for Dean Forwarding</h3>
+            <div class="empty-state" style="padding: 20px;">
+                <i class="fas fa-check-circle"></i>
+                <p>No pending theses from faculty to review.</p>
             </div>
         </div>
         <?php endif; ?>
@@ -795,6 +964,134 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         const thesisTableBody = document.getElementById('thesisTableBody');
         const markAllReadBtn = document.getElementById('markAllRead');
         
+        // Toast function
+        function showToast(message, isError = false) {
+            const toast = document.createElement('div');
+            toast.className = 'toast-message' + (isError ? ' error' : '');
+            toast.innerHTML = '<i class="fas ' + (isError ? 'fa-exclamation-circle' : 'fa-check-circle') + '"></i> ' + message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Forward to Dean Function
+        window.forwardToDean = function(button) {
+            const container = button.closest('.notification-list-item');
+            const thesisId = container.dataset.thesisId;
+            const thesisTitle = container.dataset.thesisTitle;
+            const studentName = container.dataset.studentName;
+            
+            if (confirm('Are you sure you want to forward this thesis to the Dean?')) {
+                button.disabled = true;
+                button.innerHTML = 'Processing...';
+                
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'forward_to_dean=1&thesis_id=' + thesisId + '&thesis_title=' + encodeURIComponent(thesisTitle) + '&student_name=' + encodeURIComponent(studentName)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message);
+                        const notifItem = button.closest('.notification-list-item');
+                        if (notifItem) notifItem.remove();
+                        const badge = document.getElementById('notificationBadge');
+                        if (badge) {
+                            let c = parseInt(badge.textContent);
+                            if (c > 0) {
+                                c--;
+                                if (c === 0) badge.style.display = 'none';
+                                else badge.textContent = c;
+                            }
+                        }
+                        setTimeout(() => location.reload(), 1000);
+                    } else {
+                        showToast('Error: ' + (data.message || 'Unknown error'), true);
+                        button.disabled = false;
+                        button.innerHTML = 'Forward to Dean <i class="fas fa-arrow-right"></i>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showToast('Network error. Please try again.', true);
+                    button.disabled = false;
+                    button.innerHTML = 'Forward to Dean <i class="fas fa-arrow-right"></i>';
+                });
+            }
+        };
+        
+        // Show reject reason input
+        window.showRejectReason = function(button) {
+            const container = button.closest('.notification-list-item');
+            const actionsGroup = container.querySelector('.notification-actions-group');
+            const rejectReasonDiv = container.querySelector('.reject-reason');
+            
+            actionsGroup.style.display = 'none';
+            rejectReasonDiv.style.display = 'block';
+        };
+        
+        // Cancel reject
+        window.cancelReject = function(button) {
+            const container = button.closest('.notification-list-item');
+            const actionsGroup = container.querySelector('.notification-actions-group');
+            const rejectReasonDiv = container.querySelector('.reject-reason');
+            const reasonInput = container.querySelector('.reject-input');
+            
+            actionsGroup.style.display = 'flex';
+            rejectReasonDiv.style.display = 'none';
+            if (reasonInput) reasonInput.value = '';
+        };
+        
+        // Confirm reject
+        window.confirmReject = function(button) {
+            const container = button.closest('.notification-list-item');
+            const thesisId = container.dataset.thesisId;
+            const reasonInput = container.querySelector('.reject-input');
+            const reason = reasonInput ? reasonInput.value : '';
+            
+            if (!reason.trim()) {
+                showToast('Please enter a reason for rejection', true);
+                return;
+            }
+            
+            button.disabled = true;
+            button.innerHTML = 'Processing...';
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'reject_thesis=1&thesis_id=' + thesisId + '&reason=' + encodeURIComponent(reason)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(data.message);
+                    const notifItem = button.closest('.notification-list-item');
+                    if (notifItem) notifItem.remove();
+                    const badge = document.getElementById('notificationBadge');
+                    if (badge) {
+                        let c = parseInt(badge.textContent);
+                        if (c > 0) {
+                            c--;
+                            if (c === 0) badge.style.display = 'none';
+                            else badge.textContent = c;
+                        }
+                    }
+                    setTimeout(() => location.reload(), 1000);
+                } else {
+                    showToast('Error: ' + (data.message || 'Unknown error'), true);
+                    button.disabled = false;
+                    button.innerHTML = 'Confirm Reject';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Network error. Please try again.', true);
+                button.disabled = false;
+                button.innerHTML = 'Confirm Reject';
+            });
+        };
+        
         // Sidebar Functions
         function openSidebar() {
             sidebar.classList.add('open');
@@ -848,28 +1145,30 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             document.addEventListener('click', closeProfileDropdown);
         }
         
-        // Notification Dropdown
+        // ==================== NOTIFICATION DROPDOWN TOGGLE ====================
         function toggleNotificationDropdown(e) {
             e.stopPropagation();
             if (notificationDropdown) {
+                if (profileDropdown && profileDropdown.classList.contains('show')) {
+                    profileDropdown.classList.remove('show');
+                }
                 notificationDropdown.classList.toggle('show');
-                if (profileDropdown) profileDropdown.classList.remove('show');
             }
         }
         
         function closeNotificationDropdown(e) {
             const nc = document.querySelector('.notification-container');
-            if (nc && !nc.contains(e.target)) {
-                if (notificationDropdown) notificationDropdown.classList.remove('show');
+            if (nc && !nc.contains(e.target) && notificationDropdown && !notificationDropdown.contains(e.target)) {
+                notificationDropdown.classList.remove('show');
             }
         }
         
         if (notificationIcon) {
             notificationIcon.addEventListener('click', toggleNotificationDropdown);
-            document.addEventListener('click', closeNotificationDropdown);
         }
+        document.addEventListener('click', closeNotificationDropdown);
         
-        // Notification Functions
+        // Mark notification as read
         function markNotificationAsRead(notifId, element) {
             fetch(window.location.href, {
                 method: 'POST',
@@ -880,7 +1179,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .then(data => {
                 if (data.success) {
                     element.classList.remove('unread');
-                    const badge = document.querySelector('.notification-badge');
+                    const badge = document.getElementById('notificationBadge');
                     if (badge) {
                         let c = parseInt(badge.textContent);
                         if (c > 0) {
@@ -894,6 +1193,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .catch(error => console.error('Error:', error));
         }
         
+        // Mark all as read
         function markAllAsRead() {
             fetch(window.location.href, {
                 method: 'POST',
@@ -904,24 +1204,32 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .then(data => {
                 if (data.success) {
                     document.querySelectorAll('.notification-item.unread').forEach(item => item.classList.remove('unread'));
-                    const badge = document.querySelector('.notification-badge');
+                    const badge = document.getElementById('notificationBadge');
                     if (badge) badge.style.display = 'none';
                     if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+                    showToast('All notifications marked as read');
                 }
             })
             .catch(error => console.error('Error:', error));
         }
         
+        // Initialize notification click handlers
         function initNotifications() {
+            // Notification items are now <a> tags with href, so they will navigate directly
+            // No need for additional click handlers, but we keep for backward compatibility
             document.querySelectorAll('.notification-item').forEach(item => {
                 if (!item.classList.contains('empty')) {
+                    // Add click handler to mark as read before navigation
                     item.addEventListener('click', function(e) {
-                        e.stopPropagation();
                         const id = this.dataset.id;
-                        if (id) markNotificationAsRead(id, this);
+                        if (id) {
+                            // Don't prevent default, let the link work
+                            markNotificationAsRead(id, this);
+                        }
                     });
                 }
             });
+            
             if (markAllReadBtn) {
                 markAllReadBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
@@ -950,15 +1258,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             }
         }
         
-        // Charts Function - Balanced and Clean Display
+        // Charts Function
         function initCharts() {
-            // Status Distribution Chart (Doughnut/Pie)
             const statusCtx = document.getElementById('statusChart');
             if (statusCtx && window.chartData) {
-                // Destroy existing chart if any
-                if (window.statusChartInstance) {
-                    window.statusChartInstance.destroy();
-                }
+                if (window.statusChartInstance) window.statusChartInstance.destroy();
                 
                 window.statusChartInstance = new Chart(statusCtx, {
                     type: 'doughnut',
@@ -982,9 +1286,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         responsive: true,
                         maintainAspectRatio: true,
                         plugins: {
-                            legend: {
-                                display: false
-                            },
+                            legend: { display: false },
                             tooltip: {
                                 callbacks: {
                                     label: function(ctx) {
@@ -1002,26 +1304,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             }
                         },
                         layout: {
-                            padding: {
-                                top: 10,
-                                bottom: 10,
-                                left: 10,
-                                right: 10
-                            }
+                            padding: { top: 10, bottom: 10, left: 10, right: 10 }
                         }
                     }
                 });
             }
             
-            // Monthly Submissions Chart (Line Chart)
             const monthlyCtx = document.getElementById('monthlyChart');
             if (monthlyCtx && window.chartData) {
-                // Destroy existing chart if any
-                if (window.monthlyChartInstance) {
-                    window.monthlyChartInstance.destroy();
-                }
+                if (window.monthlyChartInstance) window.monthlyChartInstance.destroy();
                 
-                // Find max value for y-axis
                 const maxValue = Math.max(...window.chartData.monthly, 1);
                 const yAxisMax = Math.ceil(maxValue * 1.2);
                 
@@ -1049,16 +1341,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     options: {
                         responsive: true,
                         maintainAspectRatio: true,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
+                        plugins: { 
+                            legend: { display: false },
                             tooltip: {
-                                callbacks: {
-                                    label: function(ctx) {
-                                        return `Submissions: ${ctx.raw}`;
-                                    }
-                                },
+                                callbacks: { label: function(ctx) { return `Submissions: ${ctx.raw}`; } },
                                 backgroundColor: '#1f2937',
                                 titleColor: '#fef2f2',
                                 bodyColor: '#fef2f2',
@@ -1070,79 +1356,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             y: {
                                 beginAtZero: true,
                                 max: yAxisMax,
-                                grid: {
-                                    color: '#fee2e2',
-                                    drawBorder: true,
-                                    borderDash: [5, 5],
-                                    lineWidth: 1
-                                },
-                                ticks: {
-                                    stepSize: 1,
-                                    precision: 0,
-                                    color: '#6b7280',
-                                    font: {
-                                        size: 11,
-                                        weight: '500'
-                                    },
-                                    callback: function(value) {
-                                        return value;
-                                    }
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Number of Submissions',
-                                    color: '#9ca3af',
-                                    font: {
-                                        size: 10,
-                                        weight: '500'
-                                    },
-                                    padding: { bottom: 10 }
-                                }
+                                grid: { color: '#fee2e2', drawBorder: true, borderDash: [5, 5], lineWidth: 1 },
+                                ticks: { stepSize: 1, precision: 0, color: '#6b7280', font: { size: 11, weight: '500' } },
+                                title: { display: true, text: 'Number of Submissions', color: '#9ca3af', font: { size: 10, weight: '500' }, padding: { bottom: 10 } }
                             },
                             x: {
-                                grid: {
-                                    display: false,
-                                    drawBorder: true
-                                },
-                                ticks: {
-                                    color: '#6b7280',
-                                    font: {
-                                        size: 11,
-                                        weight: '500'
-                                    },
-                                    maxRotation: 45,
-                                    minRotation: 45
-                                },
-                                title: {
-                                    display: true,
-                                    text: 'Months',
-                                    color: '#9ca3af',
-                                    font: {
-                                        size: 10,
-                                        weight: '500'
-                                    },
-                                    padding: { top: 10 }
-                                }
+                                grid: { display: false },
+                                ticks: { color: '#6b7280', font: { size: 11, weight: '500' }, maxRotation: 45, minRotation: 45 },
+                                title: { display: true, text: 'Months', color: '#9ca3af', font: { size: 10, weight: '500' }, padding: { top: 10 } }
                             }
                         },
                         elements: {
-                            line: {
-                                borderJoin: 'round',
-                                borderCap: 'round'
-                            },
-                            point: {
-                                hitRadius: 10,
-                                hoverRadius: 8
-                            }
+                            line: { borderJoin: 'round', borderCap: 'round' },
+                            point: { hitRadius: 10, hoverRadius: 8 }
                         },
-                        layout: {
-                            padding: {
-                                top: 15,
-                                bottom: 15,
-                                left: 10,
-                                right: 10
-                            }
-                        }
+                        layout: { padding: { top: 15, bottom: 15, left: 10, right: 10 } }
                     }
                 });
             }
@@ -1177,7 +1405,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             initCharts();
             initSearch();
             initNotifications();
-            console.log('Coordinator Dashboard Initialized - Using notifications table with balanced charts');
+            console.log('Coordinator Dashboard Initialized - Notifications are clickable');
         });
     </script>
 </body>

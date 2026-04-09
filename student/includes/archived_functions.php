@@ -25,32 +25,9 @@ function getNotifications($conn, $user_id) {
     $recentNotifications = [];
 
     try {
-        // Detect notification table columns
-        $notif_columns = $conn->query("SHOW COLUMNS FROM notification_table");
-        $notif_user_column = 'user_id';
-        $notif_status_column = 'status';
-        $notif_message_column = 'message';
-        $notif_date_column = 'created_at';
-        
-        while ($col = $notif_columns->fetch_assoc()) {
-            $field = $col['Field'];
-            if (strpos($field, 'user') !== false) {
-                $notif_user_column = $field;
-            }
-            if (strpos($field, 'status') !== false || strpos($field, 'is_read') !== false) {
-                $notif_status_column = $field;
-            }
-            if (strpos($field, 'message') !== false) {
-                $notif_message_column = $field;
-            }
-            if (strpos($field, 'created_at') !== false || strpos($field, 'date') !== false) {
-                $notif_date_column = $field;
-            }
-        }
-        
-        // Get unread count
-        $countQuery = "SELECT COUNT(*) as total FROM notification_table 
-                       WHERE $notif_user_column = ? AND $notif_status_column = 'unread'";
+        // Get unread count - gamita ang is_read column (0 = unread, 1 = read)
+        $countQuery = "SELECT COUNT(*) as total FROM notifications 
+                       WHERE user_id = ? AND is_read = 0";
         $stmt = $conn->prepare($countQuery);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -58,18 +35,20 @@ function getNotifications($conn, $user_id) {
         $unreadCount = $countResult['total'] ?? 0;
         $stmt->close();
         
-        // Get recent notifications
-        $notifQuery = "SELECT $notif_message_column as message, $notif_status_column as status, 
-                              $notif_date_column as created_at
-                       FROM notification_table 
-                       WHERE $notif_user_column = ? 
-                       ORDER BY $notif_date_column DESC 
+        // Get recent notifications - sakto na ang table name kay "notifications"
+        $notifQuery = "SELECT notification_id, message, type, link, is_read, created_at, thesis_id
+                       FROM notifications 
+                       WHERE user_id = ? 
+                       ORDER BY created_at DESC 
                        LIMIT 5";
         $stmt = $conn->prepare($notifQuery);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
         $result = $stmt->get_result();
+        
         while ($row = $result->fetch_assoc()) {
+            // Convert is_read to readable format
+            $row['status'] = ($row['is_read'] == 0) ? 'unread' : 'read';
             $recentNotifications[] = $row;
         }
         $stmt->close();
@@ -82,6 +61,59 @@ function getNotifications($conn, $user_id) {
         'unreadCount' => $unreadCount,
         'notifications' => $recentNotifications
     ];
+}
+
+// Optional: Function para mag-create og bag-ong notification
+function createNotification($conn, $user_id, $thesis_id, $message, $type = 'info', $link = null) {
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
+            VALUES (?, ?, ?, ?, ?, 0, NOW())
+        ");
+        $stmt->bind_param("iisss", $user_id, $thesis_id, $message, $type, $link);
+        $result = $stmt->execute();
+        $stmt->close();
+        return $result;
+    } catch (Exception $e) {
+        error_log("Create notification error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Optional: Function para mark as read ang notification
+function markNotificationAsRead($conn, $notification_id, $user_id) {
+    try {
+        $stmt = $conn->prepare("
+            UPDATE notifications 
+            SET is_read = 1 
+            WHERE notification_id = ? AND user_id = ?
+        ");
+        $stmt->bind_param("ii", $notification_id, $user_id);
+        $result = $stmt->execute();
+        $stmt->close();
+        return $result;
+    } catch (Exception $e) {
+        error_log("Mark as read error: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Optional: Function para mark all as read
+function markAllNotificationsAsRead($conn, $user_id) {
+    try {
+        $stmt = $conn->prepare("
+            UPDATE notifications 
+            SET is_read = 1 
+            WHERE user_id = ? AND is_read = 0
+        ");
+        $stmt->bind_param("i", $user_id);
+        $result = $stmt->execute();
+        $stmt->close();
+        return $result;
+    } catch (Exception $e) {
+        error_log("Mark all as read error: " . $e->getMessage());
+        return false;
+    }
 }
 
 function getArchivedTheses($conn, $user_id) {

@@ -100,7 +100,7 @@ function getNotifications($conn, $user_id) {
         $stmt->close();
         
     } catch (Exception $e) {
-        error_log("Notification error: " . $e->getMessage());
+        error_log("Notifications error: " . $e->getMessage());
     }
 
     return [

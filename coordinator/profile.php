@@ -540,6 +540,24 @@ $conn->close();
             background: #991b1b;
             transform: translateY(-2px);
         }
+           .change-pass-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: #dc2626;
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+            margin-top: 24px;
+        }
+          .change-pass-btn:hover {
+            background: #991b1b;
+            transform: translateY(-2px);
+        }
 
         /* Responsive */
         @media (max-width: 768px) {
@@ -773,6 +791,10 @@ $conn->close();
 
                 <a href="editProfile.php" class="edit-profile-btn">
                     <i class="fas fa-edit"></i> Edit Profile
+                </a>
+
+              <a href="changepass.php" class="change-pass-btn">
+                    <i class="fas fa-key"></i> Change Password
                 </a>
             </div>
         </div>

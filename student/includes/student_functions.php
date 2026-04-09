@@ -123,7 +123,7 @@ function getNotifications($conn, $user_id) {
                         status,
                         created_at,
                         thesis_id
-                       FROM notification_table 
+                       FROM notifications
                        WHERE user_id = ? 
                        ORDER BY created_at DESC 
                        LIMIT 10";
@@ -181,7 +181,7 @@ function getRecentFeedback($conn, $student_id) {
                             f.comments as feedback_text,
                             f.feedback_date
                           FROM feedback_table f
-                          JOIN thesis_table t ON f.thesis_id = t.thesis_id
+                          JOIN theses t ON f.thesis_id = t.thesis_id
                           JOIN user_table u ON f.faculty_id = u.user_id
                           WHERE t.student_id = ?
                           ORDER BY f.feedback_date DESC

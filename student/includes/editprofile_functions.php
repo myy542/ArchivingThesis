@@ -10,7 +10,7 @@ function getUserData($conn, $user_id) {
 
 function getNotificationCount($conn, $user_id) {
     try {
-        $notif_query = "SELECT COUNT(*) as total FROM notification_table WHERE user_id = ? AND status != 'read'";
+        $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status != 'read'";
         $stmt = $conn->prepare($notif_query);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();

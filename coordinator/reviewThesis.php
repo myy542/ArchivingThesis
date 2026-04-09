@@ -25,7 +25,7 @@ $check_notif_table = $conn->query("SHOW TABLES LIKE 'notifications'");
 if (!$check_notif_table || $check_notif_table->num_rows == 0) {
     $create_notif_table = "
         CREATE TABLE IF NOT EXISTS notifications (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+            notification_id INT AUTO_INCREMENT PRIMARY KEY,
             user_id INT NOT NULL,
             thesis_id INT NULL,
             message TEXT NOT NULL,
@@ -76,7 +76,7 @@ if ($thesis_id > 0) {
     $thesis_stmt->close();
 }
 
-// Get notification message for this thesis - GAMIT ANG NOTIFICATIONS TABLE
+// Get notification message for this thesis
 $notification_message = '';
 $notif_query = "SELECT message FROM notifications WHERE thesis_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1";
 $notif_stmt = $conn->prepare($notif_query);
@@ -92,21 +92,21 @@ $notif_stmt->close();
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['forward_to_dean'])) {
     $thesis_id_post = intval($_POST['thesis_id']);
     
-    // Update thesis status to 'Forwarded to Dean'
-    $update_query = "UPDATE theses SET status = 'Forwarded to Dean' WHERE thesis_id = ?";
+    // Update thesis status to 'forwarded_to_dean'
+    $update_query = "UPDATE theses SET status = 'forwarded_to_dean' WHERE thesis_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("i", $thesis_id_post);
     $update_stmt->execute();
     $update_stmt->close();
     
-    // Update notification status - GAMIT ANG NOTIFICATIONS TABLE
+    // Update notification status
     $update_notif = "UPDATE notifications SET is_read = 1 WHERE thesis_id = ? AND user_id = ?";
     $update_notif_stmt = $conn->prepare($update_notif);
     $update_notif_stmt->bind_param("ii", $thesis_id_post, $user_id);
     $update_notif_stmt->execute();
     $update_notif_stmt->close();
     
-    // Add notification for Dean (role_id = 4) - GAMIT ANG NOTIFICATIONS TABLE
+    // Add notification for Dean (role_id = 4)
     $dean_query = "SELECT user_id FROM user_table WHERE role_id = 4";
     $dean_result = $conn->query($dean_query);
     if ($dean_result && $dean_result->num_rows > 0) {
@@ -132,59 +132,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['request_revisions'])) 
     $thesis_id_post = intval($_POST['thesis_id']);
     $revision_feedback = trim($_POST['revision_feedback']);
     
-    // Update thesis status to 'Pending' (back to faculty)
-    $update_query = "UPDATE theses SET status = 'Pending', feedback = ? WHERE thesis_id = ?";
+    // Update thesis status to 'pending' (back to faculty)
+    $update_query = "UPDATE theses SET status = 'pending', feedback = ? WHERE thesis_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("si", $revision_feedback, $thesis_id_post);
     $update_stmt->execute();
     $update_stmt->close();
     
-    // Update notification status - GAMIT ANG NOTIFICATIONS TABLE
+    // Update notification status
     $update_notif = "UPDATE notifications SET is_read = 1 WHERE thesis_id = ? AND user_id = ?";
     $update_notif_stmt = $conn->prepare($update_notif);
     $update_notif_stmt->bind_param("ii", $thesis_id_post, $user_id);
     $update_notif_stmt->execute();
     $update_notif_stmt->close();
     
-    // Get faculty who submitted this thesis - GAMIT ANG NOTIFICATIONS TABLE
-    // Kuhaon ang faculty nga nag-submit (author sa thesis)
-    $faculty_query = "SELECT author FROM theses WHERE thesis_id = ?";
+    // Get faculty who submitted this thesis
+    $faculty_query = "SELECT submitted_by FROM theses WHERE thesis_id = ?";
     $faculty_stmt = $conn->prepare($faculty_query);
     $faculty_stmt->bind_param("i", $thesis_id_post);
     $faculty_stmt->execute();
     $faculty_result = $faculty_stmt->get_result();
-    $author_name = '';
+    $submitted_by = null;
     if ($faculty_row = $faculty_result->fetch_assoc()) {
-        $author_name = $faculty_row['author'];
+        $submitted_by = $faculty_row['submitted_by'];
     }
     $faculty_stmt->close();
     
-    // Find faculty user_id by name
-    $faculty_id = null;
-    if (!empty($author_name)) {
-        $name_parts = explode(' ', $author_name);
-        $first = $name_parts[0] ?? '';
-        $last = $name_parts[1] ?? '';
-        
-        $find_faculty = "SELECT user_id FROM user_table WHERE role_id = 3 AND first_name LIKE ? AND last_name LIKE ?";
-        $find_stmt = $conn->prepare($find_faculty);
-        $like_first = "%$first%";
-        $like_last = "%$last%";
-        $find_stmt->bind_param("ss", $like_first, $like_last);
-        $find_stmt->execute();
-        $find_result = $find_stmt->get_result();
-        if ($find_row = $find_result->fetch_assoc()) {
-            $faculty_id = $find_row['user_id'];
-        }
-        $find_stmt->close();
-    }
-    
     // If faculty found, send notification
-    if ($faculty_id) {
+    if ($submitted_by) {
         $notifMessage = "📝 Revision requested for thesis: \"" . $thesis_title . "\". Coordinator feedback: " . $revision_feedback . ". Please revise and resubmit.";
         $insert_notif = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'revision_request', 0, NOW())";
         $insert_stmt = $conn->prepare($insert_notif);
-        $insert_stmt->bind_param("iis", $faculty_id, $thesis_id_post, $notifMessage);
+        $insert_stmt->bind_param("iis", $submitted_by, $thesis_id_post, $notifMessage);
         $insert_stmt->execute();
         $insert_stmt->close();
     }
@@ -670,6 +649,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             background: #fef2f2;
             border-radius: 16px;
             padding: 16px 20px;
+            margin-bottom: 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -724,6 +704,35 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             transform: translateY(-2px);
         }
 
+        /* PDF Viewer */
+        .pdf-viewer {
+            margin-top: 1rem;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid #fee2e2;
+            background: white;
+        }
+        
+        .pdf-viewer iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+            display: block;
+        }
+        
+        .pdf-viewer .pdf-error {
+            padding: 40px;
+            text-align: center;
+            color: #9ca3af;
+            background: #fef2f2;
+        }
+        
+        .pdf-viewer .pdf-error i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #dc2626;
+        }
+
         /* Status Badge */
         .status-badge {
             display: inline-block;
@@ -751,6 +760,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             display: grid;
             grid-template-columns: repeat(2, 1fr);
             gap: 24px;
+            margin-top: 24px;
         }
 
         .action-card {
@@ -829,10 +839,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             padding: 14px 20px;
             background: #f59e0b;
             color: white;
-            text-decoration: none;
+            border: none;
             border-radius: 14px;
             font-weight: 600;
             font-size: 0.9rem;
+            cursor: pointer;
             transition: all 0.2s;
         }
 
@@ -914,6 +925,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             border-radius: 12px;
             font-size: 0.85rem;
             resize: vertical;
+            font-family: inherit;
         }
 
         .form-group textarea:focus {
@@ -1018,6 +1030,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 flex-direction: column;
                 align-items: flex-start;
             }
+            
+            .pdf-viewer iframe {
+                height: 400px;
+            }
         }
 
         @media (max-width: 480px) {
@@ -1031,6 +1047,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             
             .action-card {
                 padding: 20px;
+            }
+            
+            .pdf-viewer iframe {
+                height: 300px;
             }
         }
 
@@ -1160,6 +1180,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         body.dark-mode .notification-alert-message {
             color: #cbd5e1;
         }
+        
+        body.dark-mode .pdf-viewer {
+            background: #2d2d2d;
+            border-color: #991b1b;
+        }
+        
+        body.dark-mode .pdf-viewer .pdf-error {
+            background: #3d3d3d;
+            color: #9ca3af;
+        }
     </style>
 </head>
 <body>
@@ -1266,8 +1296,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <div class="thesis-detail-card">
             <div class="thesis-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h1 class="thesis-title" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;"><?= htmlspecialchars($thesis_title) ?></h1>
-                <span class="status-badge status-<?= strtolower($thesis_status == 'Forwarded to Dean' ? 'forwarded' : ($thesis_status == 'Approved' ? 'approved' : 'pending')) ?>">
-                    <?= htmlspecialchars($thesis_status) ?>
+                <span class="status-badge status-<?= strtolower($thesis_status == 'forwarded_to_dean' ? 'forwarded' : ($thesis_status == 'approved' ? 'approved' : 'pending')) ?>">
+                    <?= htmlspecialchars(ucfirst(str_replace('_', ' ', $thesis_status))) ?>
                 </span>
             </div>
             
@@ -1287,23 +1317,51 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <p><?= nl2br(htmlspecialchars($thesis_abstract)) ?></p>
             </div>
             
-            <?php if (!empty($thesis_file)): ?>
+            <!-- Manuscript File Section -->
             <div class="file-section">
                 <div class="file-info">
                     <i class="fas fa-file-pdf"></i>
                     <div class="file-details">
-                        <span class="file-name"><?= basename($thesis_file) ?></span>
+                        <span class="file-name"><?= !empty($thesis_file) ? basename($thesis_file) : 'No file uploaded' ?></span>
                         <span class="file-size">PDF Document</span>
                     </div>
                 </div>
-                <a href="<?= $thesis_file ?>" class="download-btn" download>
+                <?php if (!empty($thesis_file)): ?>
+                <a href="<?= htmlspecialchars($thesis_file) ?>" class="download-btn" download>
                     <i class="fas fa-download"></i> Download
                 </a>
+                <?php endif; ?>
+            </div>
+            
+            <!-- PDF Viewer -->
+            <?php if (!empty($thesis_file)): 
+                // Check if file exists
+                $full_file_path = '../' . $thesis_file;
+                if (file_exists($full_file_path)):
+            ?>
+            <div class="pdf-viewer">
+                <iframe src="<?= htmlspecialchars($full_file_path) ?>"></iframe>
+            </div>
+            <?php else: ?>
+            <div class="pdf-viewer">
+                <div class="pdf-error">
+                    <i class="fas fa-file-pdf"></i>
+                    <p>PDF file not found. Please check if the file exists in the server.</p>
+                    <p style="font-size: 0.75rem; margin-top: 8px;">Path: <?= htmlspecialchars($full_file_path) ?></p>
+                </div>
+            </div>
+            <?php endif; ?>
+            <?php else: ?>
+            <div class="pdf-viewer">
+                <div class="pdf-error">
+                    <i class="fas fa-file-pdf"></i>
+                    <p>No manuscript file uploaded for this thesis.</p>
+                </div>
             </div>
             <?php endif; ?>
         </div>
 
-        <?php if ($thesis_status != 'Forwarded to Dean' && $thesis_status != 'Approved'): ?>
+        <?php if ($thesis_status != 'forwarded_to_dean' && $thesis_status != 'approved'): ?>
         <div class="action-cards">
             <div class="action-card">
                 <div class="action-icon">
@@ -1336,7 +1394,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 <i class="fas fa-info-circle"></i>
             </div>
             <h3>Thesis Already Processed</h3>
-            <p>This thesis has already been <?= strtolower($thesis_status) ?> and cannot be modified.</p>
+            <p>This thesis has already been <?= strtolower(str_replace('_', ' ', $thesis_status)) ?> and cannot be modified.</p>
         </div>
         <?php endif; ?>
         
@@ -1469,7 +1527,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         // ==================== INITIALIZE ====================
         initDarkMode();
         
-        console.log('Review Thesis Page Initialized - Using notifications table');
+        console.log('Review Thesis Page Initialized - Using theses and notifications tables');
     </script>
 </body>
 </html>

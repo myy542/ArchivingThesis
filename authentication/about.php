@@ -774,12 +774,6 @@ $is_logged_in = isset($_SESSION['user_id']);
         </div>
     </main>
 
-    <footer>
-        <p>© <?= date('Y') ?> Web-Based Thesis Archiving System</p>
-        <p>Preserving Knowledge, Empowering Research</p>
-        <p><a href="about.php">About Us</a> | <a href="contact.php">Contact</a> | <a href="privacy.php">Privacy Policy</a></p>
-    </footer>
-
     <script>
         // Profile dropdown
         const profileWrapper = document.getElementById('profileWrapper');

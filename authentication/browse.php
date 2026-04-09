@@ -18,16 +18,17 @@ $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $year = isset($_GET['year']) ? trim($_GET['year']) : '';
 $department = isset($_GET['department']) ? trim($_GET['department']) : '';
 
-// Build the query
+// =============== FIXED: Using 'theses' table ===============
+// Only show archived theses (approved and ready for public viewing)
 $sql = "SELECT t.*, u.first_name, u.last_name 
-        FROM thesis_table t
-        JOIN user_table u ON t.student_id = u.user_id
-        WHERE t.status IN ('approved', 'archived')"; // Only show approved or archived thesis
+        FROM theses t
+        JOIN user_table u ON t.submitted_by = u.user_id
+        WHERE t.status = 'archived'"; // Only show archived thesis
 
 $countSql = "SELECT COUNT(*) as total 
-             FROM thesis_table t
-             JOIN user_table u ON t.student_id = u.user_id
-             WHERE t.status IN ('approved', 'archived')";
+             FROM theses t
+             JOIN user_table u ON t.submitted_by = u.user_id
+             WHERE t.status = 'archived'";
 
 $params = [];
 $countParams = [];
@@ -53,10 +54,10 @@ if (!empty($search)) {
     $countTypes .= "sss";
 }
 
-// Add year filter
+// Add year filter (using created_at instead of date_submitted)
 if (!empty($year)) {
-    $sql .= " AND YEAR(t.date_submitted) = ?";
-    $countSql .= " AND YEAR(t.date_submitted) = ?";
+    $sql .= " AND YEAR(t.created_at) = ?";
+    $countSql .= " AND YEAR(t.created_at) = ?";
     
     $params[] = $year;
     $types .= "s";
@@ -89,7 +90,7 @@ $totalPages = ceil($totalTheses / $limit);
 $stmt->close();
 
 // Add pagination to main query
-$sql .= " ORDER BY t.date_submitted DESC LIMIT ? OFFSET ?";
+$sql .= " ORDER BY t.created_at DESC LIMIT ? OFFSET ?";
 $params[] = $limit;
 $params[] = $offset;
 $types .= "ii";
@@ -108,9 +109,9 @@ while ($row = $result->fetch_assoc()) {
 }
 $stmt->close();
 
-// Get unique years for filter dropdown
+// Get unique years for filter dropdown (from created_at)
 $years = [];
-$yearQuery = "SELECT DISTINCT YEAR(date_submitted) as year FROM thesis_table ORDER BY year DESC";
+$yearQuery = "SELECT DISTINCT YEAR(created_at) as year FROM theses WHERE status = 'archived' ORDER BY year DESC";
 $yearResult = $conn->query($yearQuery);
 if ($yearResult) {
     while ($row = $yearResult->fetch_assoc()) {
@@ -120,7 +121,7 @@ if ($yearResult) {
 
 // Get unique departments for filter dropdown
 $departments = [];
-$deptQuery = "SELECT DISTINCT department FROM thesis_table WHERE department IS NOT NULL AND department != '' ORDER BY department";
+$deptQuery = "SELECT DISTINCT department FROM theses WHERE department IS NOT NULL AND department != '' AND status = 'archived' ORDER BY department";
 $deptResult = $conn->query($deptQuery);
 if ($deptResult) {
     while ($row = $deptResult->fetch_assoc()) {
@@ -537,7 +538,7 @@ if ($deptResult) {
             color: #e0e0e0;
         }
 
-        /* =============== UPDATED THESIS ACTIONS =============== */
+        /* Thesis Actions */
         .thesis-actions {
             display: flex;
             gap: 0.5rem;
@@ -574,22 +575,22 @@ if ($deptResult) {
         }
 
         .btn-download {
-            background: #10b981; /* Green */
+            background: #10b981;
             color: white;
         }
 
         .btn-download:hover {
-            background: #059669; /* Darker green */
+            background: #059669;
             transform: translateY(-1px);
         }
 
         .btn-login {
-            background: #10b981; /* Green */
+            background: #10b981;
             color: white;
         }
 
         .btn-login:hover {
-            background: #059669; /* Darker green */
+            background: #059669;
             transform: translateY(-1px);
         }
 
@@ -921,6 +922,12 @@ if ($deptResult) {
                             $dashboardLink = '../student/student_dashboard.php';
                         } elseif ($userRole['role_id'] == 1) { // Admin
                             $dashboardLink = '../admin/admin_dashboard.php';
+                        } elseif ($userRole['role_id'] == 6) { // Coordinator
+                            $dashboardLink = '../coordinator/coordinatorDashboard.php';
+                        } elseif ($userRole['role_id'] == 5) { // Dean
+                            $dashboardLink = '../dean/dean_approval.php';
+                        } elseif ($userRole['role_id'] == 7) { // Librarian
+                            $dashboardLink = '../librarian/librarian_archive.php';
                         }
                     }
                     ?>
@@ -937,7 +944,7 @@ if ($deptResult) {
     <div class="container">
         <div class="browse-header">
             <h1>Browse Thesis Archive</h1>
-            <p>Explore our collection of approved and archived academic theses</p>
+            <p>Explore our collection of archived academic theses</p>
         </div>
 
         <!-- Search and Filter Section -->
@@ -969,14 +976,12 @@ if ($deptResult) {
                 <?php if (!empty($search) || !empty($year) || !empty($department)): ?>
                     <a href="browse.php" class="clear-btn"><i class="fas fa-times"></i> Clear Filters</a>
                 <?php endif; ?>
-
-                <button type="submit" class="search-btn" style="padding: 0.75rem 1.5rem;">Apply Filters</button>
             </div>
         </form>
 
         <!-- Results Info -->
         <div class="results-info">
-            <p>Found <strong><?= $totalTheses ?></strong> thesis</p>
+            <p>Found <strong><?= $totalTheses ?></strong> archived thesis</p>
             <?php if ($totalPages > 1): ?>
                 <p>Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong></p>
             <?php endif; ?>
@@ -1005,7 +1010,7 @@ if ($deptResult) {
                         <div class="thesis-meta">
                             <span><i class="fas fa-user"></i> <?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?></span>
                             <span><i class="fas fa-building"></i> <?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></span>
-                            <span><i class="fas fa-calendar"></i> <?= date('F Y', strtotime($thesis['date_submitted'])) ?></span>
+                            <span><i class="fas fa-calendar"></i> <?= date('F Y', strtotime($thesis['created_at'])) ?></span>
                         </div>
                         
                         <p class="thesis-abstract">
@@ -1028,7 +1033,7 @@ if ($deptResult) {
                             </div>
                         <?php endif; ?>
                         
-                        <!-- =============== THESIS ACTIONS =============== -->
+                        <!-- Thesis Actions -->
                         <div class="thesis-actions">
                             <?php if ($is_logged_in): ?>
                                 <!-- Logged in users can view full details -->

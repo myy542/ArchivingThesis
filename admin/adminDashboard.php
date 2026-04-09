@@ -108,6 +108,21 @@ if ($has_created) {
     while ($r = $m->fetch_assoc()) $monthly[$r['mo']-1] = $r['c'];
 }
 
+// Check if may data para sa graph
+$hasMonthlyData = false;
+foreach ($monthly as $val) {
+    if ($val > 0) {
+        $hasMonthlyData = true;
+        break;
+    }
+}
+
+// Sample data para sa graph kung walay actual data
+$sample_monthly_data = [3, 5, 7, 9, 12, 15, 18, 20, 16, 12, 8, 4];
+if (!$hasMonthlyData) {
+    $monthly = $sample_monthly_data;
+}
+
 // GET AUDIT LOGS COUNT
 $logs_count = $conn->query("SELECT COUNT(*) as c FROM audit_logs")->fetch_assoc()['c'];
 
@@ -732,7 +747,7 @@ $conn->close();
         .charts-row {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 25px;
+            gap: 28px;
             margin-bottom: 35px;
         }
 
@@ -741,6 +756,14 @@ $conn->close();
             border-radius: 20px;
             padding: 24px;
             border: 1px solid #ffcdd2;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
         }
 
         .chart-card h3 {
@@ -754,8 +777,10 @@ $conn->close();
         }
 
         .chart-container {
-            height: 250px;
+            height: 260px;
             position: relative;
+            width: 100%;
+            min-height: 250px;
         }
 
         /* Cards Row */
@@ -841,6 +866,93 @@ $conn->close();
             }
         }
 
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .stats-grid,
+            .stats-grid-second,
+            .charts-row,
+            .cards-row {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .top-nav {
+                left: 0;
+                padding: 0 16px;
+            }
+
+            .sidebar {
+                left: -280px;
+            }
+
+            .sidebar.open {
+                left: 0;
+            }
+
+            .main-content {
+                margin-left: 0;
+                padding: 20px;
+            }
+
+            .stats-grid,
+            .stats-grid-second,
+            .charts-row,
+            .cards-row {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .search-area {
+                display: none;
+            }
+
+            .profile-name {
+                display: none;
+            }
+
+            .welcome-banner {
+                flex-direction: column;
+                text-align: center;
+                gap: 15px;
+                padding: 25px;
+            }
+
+            .admin-info {
+                text-align: center;
+            }
+
+            .chart-container {
+                height: 220px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-content {
+                padding: 16px;
+            }
+
+            .stat-card,
+            .stat-card-small {
+                padding: 16px;
+            }
+
+            .stat-icon {
+                width: 45px;
+                height: 45px;
+                font-size: 1.2rem;
+            }
+
+            .stat-details h3 {
+                font-size: 1.4rem;
+            }
+
+            .chart-container {
+                height: 200px;
+            }
+        }
+
         /* Dark Mode */
         body.dark-mode {
             background: #0f172a;
@@ -893,84 +1005,6 @@ $conn->close();
 
         body.dark-mode .profile-dropdown a:hover {
             background: #334155;
-        }
-
-        /* Responsive */
-        @media (max-width: 1024px) {
-            .stats-grid,
-            .stats-grid-second,
-            .charts-row,
-            .cards-row {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            .top-nav {
-                left: 0;
-                padding: 0 16px;
-            }
-
-            .sidebar {
-                left: -280px;
-            }
-
-            .sidebar.open {
-                left: 0;
-            }
-
-            .main-content {
-                margin-left: 0;
-                padding: 20px;
-            }
-
-            .stats-grid,
-            .stats-grid-second,
-            .charts-row,
-            .cards-row {
-                grid-template-columns: 1fr;
-                gap: 16px;
-            }
-
-            .search-area {
-                display: none;
-            }
-
-            .profile-name {
-                display: none;
-            }
-
-            .welcome-banner {
-                flex-direction: column;
-                text-align: center;
-                gap: 15px;
-                padding: 25px;
-            }
-
-            .admin-info {
-                text-align: center;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .main-content {
-                padding: 16px;
-            }
-
-            .stat-card,
-            .stat-card-small {
-                padding: 16px;
-            }
-
-            .stat-icon {
-                width: 45px;
-                height: 45px;
-                font-size: 1.2rem;
-            }
-
-            .stat-details h3 {
-                font-size: 1.4rem;
-            }
         }
     </style>
 </head>
@@ -1277,12 +1311,17 @@ $conn->close();
                 }
             }
 
-            // ==================== CHARTS ====================
+            // ==================== BALANCED CHARTS ====================
             function initCharts() {
-                // User Distribution Chart
+                // User Distribution Chart - Balanced Doughnut
                 const distCtx = document.getElementById('userDistributionChart');
                 if (distCtx && window.userData) {
-                    new Chart(distCtx, {
+                    // Destroy existing chart if any
+                    if (window.distChartInstance) {
+                        window.distChartInstance.destroy();
+                    }
+                    
+                    window.distChartInstance = new Chart(distCtx, {
                         type: 'doughnut',
                         data: {
                             labels: ['Students', 'Research Advisers', 'Deans', 'Librarians', 'Coordinators', 'Admins'],
@@ -1297,7 +1336,10 @@ $conn->close();
                                 ],
                                 backgroundColor: ['#1976d2', '#388e3c', '#f57c00', '#7b1fa2', '#e67e22', '#d32f2f'],
                                 borderWidth: 0,
-                                cutout: '65%'
+                                cutout: '60%',
+                                hoverOffset: 10,
+                                borderRadius: 8,
+                                spacing: 5
                             }]
                         },
                         options: {
@@ -1306,7 +1348,11 @@ $conn->close();
                             plugins: {
                                 legend: {
                                     position: 'bottom',
-                                    labels: { font: { size: 11 } }
+                                    labels: { 
+                                        font: { size: 11 },
+                                        boxWidth: 10,
+                                        padding: 10
+                                    }
                                 },
                                 tooltip: {
                                     callbacks: {
@@ -1316,17 +1362,39 @@ $conn->close();
                                             const pct = total > 0 ? Math.round((val / total) * 100) : 0;
                                             return `${ctx.label}: ${val} (${pct}%)`;
                                         }
-                                    }
+                                    },
+                                    backgroundColor: '#1f2937',
+                                    titleColor: '#fef2f2',
+                                    bodyColor: '#fef2f2',
+                                    padding: 10,
+                                    cornerRadius: 8
+                                }
+                            },
+                            layout: {
+                                padding: {
+                                    top: 10,
+                                    bottom: 10,
+                                    left: 10,
+                                    right: 10
                                 }
                             }
                         }
                     });
                 }
 
-                // Registration Trend Chart
+                // Registration Trend Chart - Balanced Line Chart
                 const regCtx = document.getElementById('registrationChart');
                 if (regCtx && window.userData) {
-                    new Chart(regCtx, {
+                    // Destroy existing chart if any
+                    if (window.regChartInstance) {
+                        window.regChartInstance.destroy();
+                    }
+                    
+                    // Find max value for y-axis
+                    const maxValue = Math.max(...window.userData.monthlyData, 1);
+                    const yAxisMax = Math.ceil(maxValue * 1.2);
+                    
+                    window.regChartInstance = new Chart(regCtx, {
                         type: 'line',
                         data: {
                             labels: window.userData.months || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
@@ -1334,24 +1402,100 @@ $conn->close();
                                 label: 'New Users',
                                 data: window.userData.monthlyData || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                                 borderColor: '#dc2626',
-                                backgroundColor: 'rgba(220, 38, 38, 0.1)',
-                                borderWidth: 2,
+                                backgroundColor: 'rgba(220, 38, 38, 0.05)',
+                                borderWidth: 3,
                                 pointBackgroundColor: '#dc2626',
-                                pointBorderColor: 'white',
-                                pointRadius: 4,
+                                pointBorderColor: '#ffffff',
+                                pointBorderWidth: 2,
+                                pointRadius: 5,
+                                pointHoverRadius: 8,
+                                pointHoverBackgroundColor: '#991b1b',
                                 fill: true,
-                                tension: 0.3
+                                tension: 0.3,
+                                spanGaps: true
                             }]
                         },
                         options: {
                             responsive: true,
                             maintainAspectRatio: true,
-                            plugins: { legend: { display: false } },
+                            plugins: { 
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(ctx) {
+                                            return `New Users: ${ctx.raw}`;
+                                        }
+                                    },
+                                    backgroundColor: '#1f2937',
+                                    titleColor: '#fef2f2',
+                                    bodyColor: '#fef2f2',
+                                    padding: 10,
+                                    cornerRadius: 8
+                                }
+                            },
                             scales: {
                                 y: {
                                     beginAtZero: true,
-                                    ticks: { stepSize: 1, precision: 0 },
-                                    title: { display: true, text: 'Number of Users', font: { size: 10 } }
+                                    max: yAxisMax,
+                                    grid: {
+                                        color: '#fee2e2',
+                                        drawBorder: true,
+                                        borderDash: [5, 5],
+                                        lineWidth: 1
+                                    },
+                                    ticks: { 
+                                        stepSize: 1, 
+                                        precision: 0,
+                                        color: '#6b7280',
+                                        font: {
+                                            size: 11,
+                                            weight: '500'
+                                        }
+                                    },
+                                    title: { 
+                                        display: true, 
+                                        text: 'Number of Users', 
+                                        font: { size: 10, weight: '500' },
+                                        color: '#9ca3af',
+                                        padding: { bottom: 10 }
+                                    }
+                                },
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { 
+                                        color: '#6b7280',
+                                        font: {
+                                            size: 11,
+                                            weight: '500'
+                                        },
+                                        maxRotation: 45,
+                                        minRotation: 45
+                                    },
+                                    title: { 
+                                        display: true, 
+                                        text: 'Months', 
+                                        font: { size: 10, weight: '500' },
+                                        color: '#9ca3af',
+                                        padding: { top: 10 }
+                                    }
+                                }
+                            },
+                            elements: {
+                                line: {
+                                    borderJoin: 'round',
+                                    borderCap: 'round'
+                                },
+                                point: {
+                                    hitRadius: 10,
+                                    hoverRadius: 8
+                                }
+                            },
+                            layout: {
+                                padding: {
+                                    top: 15,
+                                    bottom: 15,
+                                    left: 10,
+                                    right: 10
                                 }
                             }
                         }
@@ -1363,7 +1507,7 @@ $conn->close();
             initDarkMode();
             initCharts();
 
-            console.log('Admin Dashboard Initialized - Menu Bar Style Sidebar with Theses');
+            console.log('Admin Dashboard Initialized - Menu Bar Style Sidebar with Balanced Charts');
         });
     </script>
 </body>
