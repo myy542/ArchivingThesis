@@ -1,141 +1,107 @@
 <?php
+
 function getUserData($conn, $user_id) {
-    $stmt = $conn->prepare("SELECT first_name, last_name, username FROM user_table WHERE user_id=? LIMIT 1");
+    $stmt = $conn->prepare("SELECT first_name, last_name FROM user_table WHERE user_id = ? LIMIT 1");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
-    $u = $stmt->get_result()->fetch_assoc();
+    $user = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-
-    $fullName = trim(($u["first_name"] ?? "") . " " . ($u["last_name"] ?? ""));
-    if ($fullName === "") $fullName = $u["username"] ?? "User";
-
-    $fi = strtoupper(substr(($u["first_name"] ?? $fullName), 0, 1));
-    $li = strtoupper(substr(($u["last_name"] ?? $fullName), 0, 1));
-    $initials = trim($fi . $li);
-
+    
+    $fullName = trim(($user['first_name'] ?? '') . " " . ($user['last_name'] ?? ''));
+    $initials = !empty($user['first_name']) && !empty($user['last_name']) 
+                ? strtoupper(substr($user['first_name'], 0, 1) . substr($user['last_name'], 0, 1)) 
+                : "U";
+    
     return [
         'fullName' => $fullName,
         'initials' => $initials,
-        'username' => $u['username'] ?? ''
+        'first_name' => $user['first_name'] ?? '',
+        'last_name' => $user['last_name'] ?? ''
     ];
 }
 
 function getNotifications($conn, $user_id) {
     $unreadCount = 0;
-    $recentNotifications = [];
-
-    try {
-        // Get unread count - gamita ang is_read column (0 = unread, 1 = read)
-        $countQuery = "SELECT COUNT(*) as total FROM notifications 
-                       WHERE user_id = ? AND is_read = 0";
-        $stmt = $conn->prepare($countQuery);
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $countResult = $stmt->get_result()->fetch_assoc();
-        $unreadCount = $countResult['total'] ?? 0;
-        $stmt->close();
-        
-        // Get recent notifications - sakto na ang table name kay "notifications"
-        $notifQuery = "SELECT notification_id, message, type, link, is_read, created_at, thesis_id
-                       FROM notifications 
-                       WHERE user_id = ? 
-                       ORDER BY created_at DESC 
-                       LIMIT 5";
-        $stmt = $conn->prepare($notifQuery);
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        while ($row = $result->fetch_assoc()) {
-            // Convert is_read to readable format
-            $row['status'] = ($row['is_read'] == 0) ? 'unread' : 'read';
-            $recentNotifications[] = $row;
-        }
-        $stmt->close();
-        
-    } catch (Exception $e) {
-        error_log("Notification error: " . $e->getMessage());
+    $notifications = [];
+    
+    // Get unread count
+    $countQuery = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND status = 0";
+    $countStmt = $conn->prepare($countQuery);
+    $countStmt->bind_param("i", $user_id);
+    $countStmt->execute();
+    $result = $countStmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $unreadCount = $row['count'];
     }
-
+    $countStmt->close();
+    
+    // Get recent notifications
+    $notifQuery = "SELECT notification_id, message, status, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10";
+    $notifStmt = $conn->prepare($notifQuery);
+    $notifStmt->bind_param("i", $user_id);
+    $notifStmt->execute();
+    $notifResult = $notifStmt->get_result();
+    while ($row = $notifResult->fetch_assoc()) {
+        $notifications[] = $row;
+    }
+    $notifStmt->close();
+    
     return [
         'unreadCount' => $unreadCount,
-        'notifications' => $recentNotifications
+        'notifications' => $notifications
     ];
-}
-
-// Optional: Function para mag-create og bag-ong notification
-function createNotification($conn, $user_id, $thesis_id, $message, $type = 'info', $link = null) {
-    try {
-        $stmt = $conn->prepare("
-            INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
-            VALUES (?, ?, ?, ?, ?, 0, NOW())
-        ");
-        $stmt->bind_param("iisss", $user_id, $thesis_id, $message, $type, $link);
-        $result = $stmt->execute();
-        $stmt->close();
-        return $result;
-    } catch (Exception $e) {
-        error_log("Create notification error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Optional: Function para mark as read ang notification
-function markNotificationAsRead($conn, $notification_id, $user_id) {
-    try {
-        $stmt = $conn->prepare("
-            UPDATE notifications 
-            SET is_read = 1 
-            WHERE notification_id = ? AND user_id = ?
-        ");
-        $stmt->bind_param("ii", $notification_id, $user_id);
-        $result = $stmt->execute();
-        $stmt->close();
-        return $result;
-    } catch (Exception $e) {
-        error_log("Mark as read error: " . $e->getMessage());
-        return false;
-    }
-}
-
-// Optional: Function para mark all as read
-function markAllNotificationsAsRead($conn, $user_id) {
-    try {
-        $stmt = $conn->prepare("
-            UPDATE notifications 
-            SET is_read = 1 
-            WHERE user_id = ? AND is_read = 0
-        ");
-        $stmt->bind_param("i", $user_id);
-        $result = $stmt->execute();
-        $stmt->close();
-        return $result;
-    } catch (Exception $e) {
-        error_log("Mark all as read error: " . $e->getMessage());
-        return false;
-    }
 }
 
 function getArchivedTheses($conn, $user_id) {
     $archived = [];
     
-    $stmt = $conn->prepare("
-        SELECT thesis_id, title, abstract, adviser, file_path, date_submitted, status
-        FROM thesis_table
-        WHERE student_id = ?
-        AND LOWER(status) = 'archived'
-        ORDER BY date_submitted DESC
-    ");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    // First get the student_id from student_table
+    $studentQuery = "SELECT student_id FROM student_table WHERE user_id = ? LIMIT 1";
+    $studentStmt = $conn->prepare($studentQuery);
+    $studentStmt->bind_param("i", $user_id);
+    $studentStmt->execute();
+    $studentResult = $studentStmt->get_result();
+    $student = $studentResult->fetch_assoc();
+    $studentStmt->close();
     
-    while ($row = $res->fetch_assoc()) {
-        $row['file_path'] = '/ArchivingThesis/' . $row['file_path'];
+    if (!$student) {
+        return $archived;
+    }
+    
+    $student_id = $student['student_id'];
+    
+    // Get archived theses for this student only
+    $query = "SELECT thesis_id, title, adviser, abstract, file_path, date_submitted, archived_date, status 
+              FROM thesis_table 
+              WHERE student_id = ? AND status = 'archived'
+              ORDER BY archived_date DESC";
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param("i", $student_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    while ($row = $result->fetch_assoc()) {
         $archived[] = $row;
     }
     $stmt->close();
     
     return $archived;
 }
+
+function markNotificationAsRead($conn, $notification_id, $user_id) {
+    $stmt = $conn->prepare("UPDATE notifications SET status = 1 WHERE notification_id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $notification_id, $user_id);
+    $stmt->execute();
+    $stmt->close();
+    return true;
+}
+
+function markAllNotificationsAsRead($conn, $user_id) {
+    $stmt = $conn->prepare("UPDATE notifications SET status = 1 WHERE user_id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $stmt->close();
+    return true;
+}
+
 ?>

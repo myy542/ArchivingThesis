@@ -16,6 +16,44 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
+// Get thesis ID from URL
+$thesis_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+
+if ($thesis_id == 0) {
+    header("Location: librarian_dashboard.php");
+    exit;
+}
+
+// Get thesis details
+$thesis_query = "SELECT t.*, u.first_name, u.last_name, u.email 
+                 FROM thesis_table t
+                 JOIN user_table u ON t.student_id = u.user_id
+                 WHERE t.thesis_id = ?";
+$thesis_stmt = $conn->prepare($thesis_query);
+$thesis_stmt->bind_param("i", $thesis_id);
+$thesis_stmt->execute();
+$thesis_result = $thesis_stmt->get_result();
+$thesis = $thesis_result->fetch_assoc();
+$thesis_stmt->close();
+
+if (!$thesis) {
+    header("Location: librarian_dashboard.php");
+    exit;
+}
+
+// Get archive details if exists (check if table exists first)
+$archive = null;
+$check_archive_table = $conn->query("SHOW TABLES LIKE 'archive_table'");
+if ($check_archive_table && $check_archive_table->num_rows > 0) {
+    $archive_query = "SELECT * FROM archive_table WHERE thesis_id = ?";
+    $archive_stmt = $conn->prepare($archive_query);
+    $archive_stmt->bind_param("i", $thesis_id);
+    $archive_stmt->execute();
+    $archive_result = $archive_stmt->get_result();
+    $archive = $archive_result->fetch_assoc();
+    $archive_stmt->close();
+}
+
 // GET NOTIFICATION COUNT
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
@@ -70,21 +108,7 @@ if (isset($_POST['mark_all_read'])) {
     exit;
 }
 
-// GET ALL ARCHIVED THESES
-$archived_theses = [];
-$archived_query = "SELECT t.*, u.first_name, u.last_name, u.email 
-                   FROM thesis_table t
-                   JOIN user_table u ON t.student_id = u.user_id
-                   WHERE t.status = 'archived'
-                   ORDER BY t.archived_date DESC";
-$archived_result = $conn->query($archived_query);
-if ($archived_result && $archived_result->num_rows > 0) {
-    while ($row = $archived_result->fetch_assoc()) {
-        $archived_theses[] = $row;
-    }
-}
-
-$pageTitle = "Archived Theses List";
+$pageTitle = "View Thesis Details";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -97,7 +121,7 @@ $pageTitle = "Archived Theses List";
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
-        
+
         .top-nav {
             position: fixed; top: 0; right: 0; left: 0; height: 70px;
             background: white; display: flex; align-items: center;
@@ -178,39 +202,62 @@ $pageTitle = "Archived Theses List";
         
         .main-content { margin-left: 0; margin-top: 70px; padding: 32px; transition: margin-left 0.3s ease; }
         
-        .page-header { margin-bottom: 30px; }
-        .page-header h1 { font-size: 1.8rem; font-weight: 700; color: #991b1b; display: flex; align-items: center; gap: 12px; }
-        .page-header p { color: #6b7280; margin-top: 5px; }
+        .back-link { display: inline-flex; align-items: center; gap: 8px; color: #dc2626; text-decoration: none; margin-bottom: 20px; font-weight: 500; }
+        .back-link:hover { text-decoration: underline; }
         
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 32px; }
-        .stat-card { background: white; border-radius: 20px; padding: 24px; display: flex; align-items: center; gap: 18px; border: 1px solid #ffcdd2; transition: all 0.3s; }
-        .stat-icon { width: 55px; height: 55px; background: #fef2f2; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #dc2626; }
-        .stat-details h3 { font-size: 1.8rem; font-weight: 700; color: #991b1b; margin-bottom: 5px; }
-        .stat-details p { font-size: 0.8rem; color: #6b7280; }
+        .thesis-card { background: white; border-radius: 24px; padding: 32px; margin-bottom: 32px; border: 1px solid #fee2e2; }
+        .thesis-header { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #f0f0f0; }
+        .thesis-title { font-size: 1.5rem; font-weight: 700; color: #1f2937; }
+        .status-badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; margin-left: 15px; }
+        .status-archived { background: #d1ecf1; color: #0c5460; }
+        .status-approved { background: #d4edda; color: #155724; }
+        .status-pending { background: #fff3cd; color: #856404; }
         
-        .theses-section { background: white; border-radius: 24px; padding: 24px; border: 1px solid #ffcdd2; }
-        .table-responsive { overflow-x: auto; }
-        .theses-table { width: 100%; border-collapse: collapse; }
-        .theses-table th { text-align: left; padding: 12px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #ffcdd2; }
-        .theses-table td { padding: 12px; border-bottom: 1px solid #fef2f2; font-size: 0.85rem; }
-        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
-        .status-badge.archived { background: #d1ecf1; color: #0c5460; }
-        .btn-view { background: #dc2626; color: white; padding: 6px 16px; border-radius: 20px; text-decoration: none; font-size: 0.75rem; font-weight: 500; transition: all 0.2s; }
-        .btn-view:hover { background: #991b1b; transform: translateY(-2px); }
-        .empty-state { text-align: center; padding: 40px; color: #9ca3af; }
-        .empty-state i { font-size: 3rem; margin-bottom: 12px; color: #dc2626; }
+        .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 24px; }
+        .info-item { background: #f8fafc; padding: 16px; border-radius: 12px; }
+        .info-label { font-size: 0.75rem; color: #6b7280; margin-bottom: 5px; }
+        .info-value { font-size: 0.95rem; font-weight: 500; color: #1f2937; }
+        
+        .abstract-section { margin-bottom: 24px; }
+        .abstract-section h3 { font-size: 1rem; font-weight: 600; color: #991b1b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .abstract-text { background: #f8fafc; padding: 20px; border-radius: 12px; line-height: 1.6; }
+        
+        .file-section { background: #f8fafc; border-radius: 16px; padding: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+        .file-info { display: flex; align-items: center; gap: 12px; }
+        .file-info i { font-size: 2rem; color: #dc2626; }
+        .download-btn { background: #dc2626; color: white; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; }
+        .download-btn:hover { background: #991b1b; transform: translateY(-2px); }
+        
+        .pdf-viewer { margin-top: 1rem; border-radius: 12px; overflow: hidden; border: 1px solid #fee2e2; background: white; }
+        .pdf-viewer iframe { width: 100%; height: 600px; border: none; }
+        .pdf-viewer .pdf-error { padding: 40px; text-align: center; color: #9ca3af; background: #fef2f2; }
+        
+        .archive-info { background: #e8f5e9; border-radius: 16px; padding: 20px; margin-top: 20px; border-left: 4px solid #10b981; }
+        .archive-info h4 { font-size: 0.9rem; font-weight: 600; color: #2e7d32; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+        .archive-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 10px; }
         
         @media (max-width: 768px) {
             .main-content { padding: 20px; }
-            .stats-grid { grid-template-columns: 1fr; }
+            .info-grid { grid-template-columns: 1fr; }
+            .archive-details { grid-template-columns: 1fr; }
             .search-area, .profile-name { display: none; }
-            .notification-dropdown { width: 320px; right: -10px; }
+            .pdf-viewer iframe { height: 400px; }
+        }
+        
+        @media (max-width: 480px) {
+            .thesis-card { padding: 20px; }
+            .thesis-title { font-size: 1.2rem; }
+            .pdf-viewer iframe { height: 300px; }
         }
         
         body.dark-mode { background: #1a1a1a; }
-        body.dark-mode .top-nav, body.dark-mode .stat-card, body.dark-mode .theses-section, body.dark-mode .notification-dropdown { background: #2d2d2d; border-color: #991b1b; }
-        body.dark-mode .stat-details h3, body.dark-mode .page-header h1 { color: #fecaca; }
-        body.dark-mode .theses-table td { color: #e5e7eb; border-bottom-color: #3d3d3d; }
+        body.dark-mode .top-nav, body.dark-mode .thesis-card { background: #2d2d2d; border-color: #991b1b; }
+        body.dark-mode .thesis-title { color: #fecaca; }
+        body.dark-mode .info-item, body.dark-mode .abstract-text, body.dark-mode .file-section { background: #3d3d3d; }
+        body.dark-mode .info-value { color: #e5e7eb; }
+        body.dark-mode .abstract-text { color: #cbd5e1; }
+        body.dark-mode .archive-info { background: #1a3a1a; }
+        body.dark-mode .notification-dropdown { background: #2d2d2d; border-color: #991b1b; }
         body.dark-mode .notification-item:hover { background: #3d3d3d; }
         body.dark-mode .notification-item.unread { background: #3a2a2a; }
     </style>
@@ -276,7 +323,7 @@ $pageTitle = "Archived Theses List";
         <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">LIBRARIAN</div></div>
         <div class="nav-menu">
             <a href="librarian_dashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
-            <a href="archived_list.php" class="nav-item active"><i class="fas fa-folder-open"></i><span>Archived List</span></a>
+            <a href="archived_list.php" class="nav-item"><i class="fas fa-folder-open"></i><span>Archived List</span></a>
         </div>
         <div class="nav-footer">
             <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i></label></div>
@@ -285,44 +332,113 @@ $pageTitle = "Archived Theses List";
     </aside>
 
     <main class="main-content">
-        <div class="page-header">
-            <h1><i class="fas fa-archive"></i> Archived Theses</h1>
-            <p>List of all archived theses in the system</p>
-        </div>
+        <a href="javascript:history.back()" class="back-link"><i class="fas fa-arrow-left"></i> Back</a>
 
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-details"><h3><?= number_format(count($archived_theses)) ?></h3><p>Total Archived</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-calendar"></i></div><div class="stat-details"><h3><?= number_format(count($archived_theses)) ?></h3><p>Archived Theses</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-book"></i></div><div class="stat-details"><h3><?= number_format(count($archived_theses)) ?></h3><p>Total Records</p></div></div>
-        </div>
+        <div class="thesis-card">
+            <div class="thesis-header">
+                <h1 class="thesis-title">
+                    <?= htmlspecialchars($thesis['title']) ?>
+                    <span class="status-badge status-<?= $thesis['status'] ?>"><?= ucfirst($thesis['status']) ?></span>
+                </h1>
+            </div>
 
-        <div class="theses-section">
-            <h3 style="margin-bottom: 20px; color: #991b1b;"><i class="fas fa-folder-open"></i> Archived Theses List</h3>
-            <?php if (empty($archived_theses)): ?>
-                <div class="empty-state"><i class="fas fa-archive"></i><p>No archived theses yet.</p></div>
-            <?php else: ?>
-                <div class="table-responsive">
-                    <table class="theses-table">
-                        <thead>
-                            <tr><th>ID</th><th>Thesis Title</th><th>Author</th><th>Student</th><th>Department</th><th>Archived Date</th><th>Status</th><th>Action</th></tr>
-                        </thead>
-                        <tbody>
-                            <?php $counter = 1; ?>
-                            <?php foreach ($archived_theses as $thesis): ?>
-                            <tr>
-                                <td><?= $counter++ ?></td>
-                                <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
-                                <td><?= htmlspecialchars($thesis['adviser'] ?? 'Unknown') ?></td>
-                                <td><?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?></td>
-                                <td><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></td>
-                                <td><?= isset($thesis['archived_date']) ? date('M d, Y', strtotime($thesis['archived_date'])) : date('M d, Y', strtotime($thesis['date_submitted'])) ?></td>
-                                <td><span class="status-badge archived">Archived</span></td>
-                                <td><a href="view_thesis.php?id=<?= $thesis['thesis_id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-user"></i> Student Name</div>
+                    <div class="info-value"><?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?></div>
                 </div>
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-envelope"></i> Email</div>
+                    <div class="info-value"><?= htmlspecialchars($thesis['email']) ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-user-tie"></i> Adviser</div>
+                    <div class="info-value"><?= htmlspecialchars($thesis['adviser'] ?? 'N/A') ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-building"></i> Department</div>
+                    <div class="info-value"><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-calendar"></i> Date Submitted</div>
+                    <div class="info-value"><?= date('F d, Y', strtotime($thesis['date_submitted'])) ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label"><i class="fas fa-tags"></i> Keywords</div>
+                    <div class="info-value"><?= htmlspecialchars($thesis['keywords'] ?? 'N/A') ?></div>
+                </div>
+            </div>
+
+            <div class="abstract-section">
+                <h3><i class="fas fa-align-left"></i> Abstract</h3>
+                <div class="abstract-text">
+                    <?= nl2br(htmlspecialchars($thesis['abstract'])) ?>
+                </div>
+            </div>
+
+            <!-- Manuscript File Section -->
+            <div class="file-section">
+                <div class="file-info">
+                    <i class="fas fa-file-pdf"></i>
+                    <div class="file-name"><?= !empty($thesis['file_path']) ? basename($thesis['file_path']) : 'No file uploaded' ?></div>
+                </div>
+                <?php if (!empty($thesis['file_path'])): ?>
+                <a href="<?= htmlspecialchars('../' . $thesis['file_path']) ?>" class="download-btn" download><i class="fas fa-download"></i> Download PDF</a>
+                <?php endif; ?>
+            </div>
+
+            <!-- PDF Viewer -->
+            <?php if (!empty($thesis['file_path'])): 
+                $full_file_path = '../' . $thesis['file_path'];
+                if (file_exists($full_file_path)):
+            ?>
+            <div class="pdf-viewer">
+                <iframe src="<?= htmlspecialchars($full_file_path) ?>"></iframe>
+            </div>
+            <?php else: ?>
+            <div class="pdf-viewer">
+                <div class="pdf-error"><i class="fas fa-file-pdf"></i><p>PDF file not found on server.</p></div>
+            </div>
+            <?php endif; ?>
+            <?php else: ?>
+            <div class="pdf-viewer">
+                <div class="pdf-error"><i class="fas fa-file-pdf"></i><p>No manuscript file uploaded.</p></div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Archive Information -->
+            <?php if ($thesis['status'] == 'archived' && $archive): ?>
+            <div class="archive-info">
+                <h4><i class="fas fa-archive"></i> Archive Information</h4>
+                <div class="archive-details">
+                    <div>
+                        <div class="info-label">Archived Date</div>
+                        <div class="info-value"><?= isset($thesis['archived_date']) ? date('F d, Y', strtotime($thesis['archived_date'])) : 'N/A' ?></div>
+                    </div>
+                    <div>
+                        <div class="info-label">Retention Period</div>
+                        <div class="info-value"><?= $archive['retention_period'] ?? '5' ?> years</div>
+                    </div>
+                    <div>
+                        <div class="info-label">Access Level</div>
+                        <div class="info-value"><?= ucfirst($archive['access_level'] ?? 'Public') ?></div>
+                    </div>
+                </div>
+                <?php if (!empty($archive['archive_notes'])): ?>
+                <div style="margin-top: 12px;">
+                    <div class="info-label">Archive Notes</div>
+                    <div class="info-value"><?= htmlspecialchars($archive['archive_notes']) ?></div>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php elseif ($thesis['status'] == 'archived' && !$archive): ?>
+            <div class="archive-info">
+                <h4><i class="fas fa-archive"></i> Archive Information</h4>
+                <div>
+                    <div class="info-label">Archived Date</div>
+                    <div class="info-value"><?= isset($thesis['archived_date']) ? date('F d, Y', strtotime($thesis['archived_date'])) : 'N/A' ?></div>
+                </div>
+            </div>
             <?php endif; ?>
         </div>
     </main>

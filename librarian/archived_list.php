@@ -5,6 +5,7 @@ include("../config/db.php");
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
+// LOGIN VALIDATION
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'librarian') {
     header("Location: /ArchivingThesis/authentication/login.php");
     exit;
@@ -15,6 +16,21 @@ $first_name = $_SESSION['first_name'] ?? '';
 $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
+
+// GET USER DATA
+$user_query = "SELECT first_name, last_name, email FROM user_table WHERE user_id = ?";
+$user_stmt = $conn->prepare($user_query);
+$user_stmt->bind_param("i", $user_id);
+$user_stmt->execute();
+$user_data = $user_stmt->get_result()->fetch_assoc();
+$user_stmt->close();
+
+if ($user_data) {
+    $first_name = $user_data['first_name'];
+    $last_name = $user_data['last_name'];
+    $fullName = $first_name . " " . $last_name;
+    $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
+}
 
 // GET NOTIFICATION COUNT
 $notificationCount = 0;
@@ -70,7 +86,7 @@ if (isset($_POST['mark_all_read'])) {
     exit;
 }
 
-// GET ALL ARCHIVED THESES
+// GET ARCHIVED THESES
 $archived_theses = [];
 $archived_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                    FROM thesis_table t
@@ -154,8 +170,8 @@ $pageTitle = "Archived Theses List";
         .profile-dropdown a:hover { background: #fef2f2; color: #dc2626; }
         .profile-dropdown hr { margin: 5px 0; border-color: #ffcdd2; }
         
-        .sidebar { position: fixed; top: 0; left: -300px; width: 280px; height: 100%; background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%); display: flex; flex-direction: column; z-index: 1000; transition: left 0.3s ease; box-shadow: 2px 0 10px rgba(0,0,0,0.05); }
-        .sidebar.open { left: 0; }
+        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100%; background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%); display: flex; flex-direction: column; z-index: 100; transform: translateX(-100%); transition: transform 0.3s ease; box-shadow: 2px 0 10px rgba(0,0,0,0.05); }
+        .sidebar.open { transform: translateX(0); }
         .logo-container { padding: 28px 24px; border-bottom: 1px solid rgba(255,255,255,0.15); }
         .logo-container .logo { color: white; }
         .logo-container .logo span { color: #fecaca; }
@@ -173,7 +189,7 @@ $pageTitle = "Archived Theses List";
         .logout-btn { display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-decoration: none; color: #fecaca; border-radius: 10px; }
         .logout-btn:hover { background: rgba(255,255,255,0.15); color: white; }
         
-        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 999; display: none; }
+        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 99; display: none; }
         .sidebar-overlay.show { display: block; }
         
         .main-content { margin-left: 0; margin-top: 70px; padding: 32px; transition: margin-left 0.3s ease; }
@@ -244,7 +260,7 @@ $pageTitle = "Archived Theses List";
                             <div class="notification-item empty"><div class="notif-icon"><i class="far fa-bell-slash"></i></div><div class="notif-content"><div class="notif-message">No notifications yet</div></div></div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <a href="<?= $notif['link'] ?? 'view_thesis.php?id=' . $notif['thesis_id'] ?>" class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
+                                <a href="<?= $notif['link'] ?? 'librarian_dashboard.php' ?>" class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
                                     <div class="notif-icon"><i class="fas fa-bell"></i></div>
                                     <div class="notif-content">
                                         <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>
@@ -276,6 +292,7 @@ $pageTitle = "Archived Theses List";
         <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">LIBRARIAN</div></div>
         <div class="nav-menu">
             <a href="librarian_dashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
+            <a href="librarian_archive.php" class="nav-item"><i class="fas fa-archive"></i><span>Archive Theses</span></a>
             <a href="archived_list.php" class="nav-item active"><i class="fas fa-folder-open"></i><span>Archived List</span></a>
         </div>
         <div class="nav-footer">
@@ -426,6 +443,7 @@ $pageTitle = "Archived Theses List";
         document.addEventListener('DOMContentLoaded', function() {
             initDarkMode();
             initNotifications();
+            console.log("Archived List Page Loaded - Total Archived: <?= count($archived_theses) ?>");
         });
     </script>
 </body>
