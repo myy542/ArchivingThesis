@@ -76,10 +76,10 @@ function logAdminAction($conn, $user_id, $action, $table, $record_id, $descripti
 logAdminAction($conn, $user_id, "Admin accessed dashboard", "user_table", $user_id, "Admin $fullName accessed the admin dashboard");
 
 // ==================== NOTIFICATION HANDLERS ====================
-// MARK NOTIFICATION AS READ (via AJAX)
+// MARK NOTIFICATION AS READ (via AJAX) - using is_read
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
-    $update_query = "UPDATE notifications SET status = 1 WHERE notification_id = ? AND user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("ii", $notif_id, $user_id);
     $update_stmt->execute();
@@ -88,9 +88,9 @@ if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     exit;
 }
 
-// MARK ALL NOTIFICATIONS AS READ
+// MARK ALL NOTIFICATIONS AS READ - using is_read
 if (isset($_POST['mark_all_read'])) {
-    $update_query = "UPDATE notifications SET status = 1 WHERE user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("i", $user_id);
     $update_stmt->execute();
@@ -158,7 +158,7 @@ if ($check_theses_table && $check_theses_table->num_rows > 0) {
 }
 
 // ==================== NOTIFICATION SYSTEM ====================
-// Create notifications table if not exists
+// Create notifications table if not exists (with is_read column)
 $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     notification_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -166,17 +166,23 @@ $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     message TEXT NOT NULL,
     type VARCHAR(50) DEFAULT 'info',
     link VARCHAR(255) NULL,
-    status TINYINT DEFAULT 0,
+    is_read TINYINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX (user_id),
-    INDEX (status)
+    INDEX (is_read)
 )");
 
-// GET NOTIFICATION COUNT - using 'status' instead of 'is_read'
+// Check if is_read column exists, if not add it
+$check_is_read = $conn->query("SHOW COLUMNS FROM notifications LIKE 'is_read'");
+if (!$check_is_read || $check_is_read->num_rows == 0) {
+    $conn->query("ALTER TABLE notifications ADD COLUMN is_read TINYINT DEFAULT 0");
+}
+
+// GET NOTIFICATION COUNT - using is_read = 0 for unread
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows > 0) {
-    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND status = 0");
+    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0");
     $n->bind_param("i", $user_id);
     $n->execute();
     $result = $n->get_result();
@@ -188,7 +194,7 @@ if ($notif_check && $notif_check->num_rows > 0) {
 
 // GET RECENT NOTIFICATIONS FOR DROPDOWN
 $recentNotifications = [];
-$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, type, link, status, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10");
+$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, type, link, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10");
 $notif_list->bind_param("i", $user_id);
 $notif_list->execute();
 $notif_result = $notif_list->get_result();
@@ -1260,17 +1266,17 @@ $conn->close();
                             </div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <div class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>" data-link="<?= htmlspecialchars($notif['link'] ?? '#') ?>">
+                                <div class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>" data-link="<?= htmlspecialchars($notif['link'] ?? '#') ?>">
                                     <div class="notif-icon">
                                         <?php if(strpos($notif['message'], 'registration') !== false): ?>
                                             <i class="fas fa-user-plus"></i>
                                         <?php elseif(strpos($notif['message'], 'thesis') !== false): ?>
                                             <i class="fas fa-file-alt"></i>
-                                        elseif(strpos($notif['message'], 'approved') !== false):
-                                            echo '<i class="fas fa-check-circle"></i>';
-                                        elseif(strpos($notif['message'], 'rejected') !== false):
-                                            echo '<i class="fas fa-times-circle"></i>';
-                                        else: ?>
+                                        <?php elseif(strpos($notif['message'], 'approved') !== false): ?>
+                                            <i class="fas fa-check-circle"></i>
+                                        <?php elseif(strpos($notif['message'], 'rejected') !== false): ?>
+                                            <i class="fas fa-times-circle"></i>
+                                        <?php else: ?>
                                             <i class="fas fa-bell"></i>
                                         <?php endif; ?>
                                     </div>

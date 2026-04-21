@@ -12,7 +12,14 @@ function getUserData($conn, $user_id) {
 // Dili na kinahanglan ang getOrCreateStudentId - diretso na lang
 function getNotificationCount($conn, $user_id) {
     try {
-        $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status = 0";
+        // Check if 'is_read' column exists, if not use 'status' for backward compatibility
+        $col_check = $conn->query("SHOW COLUMNS FROM notifications LIKE 'is_read'");
+        if ($col_check && $col_check->num_rows > 0) {
+            $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0";
+        } else {
+            // Fallback to status column
+            $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status = 0";
+        }
         $stmt = $conn->prepare($notif_query);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -167,7 +174,7 @@ function uploadThesis($conn, $user_id, $first, $last, $post, $files, $fileTmp) {
     }
 }
 
-// SEND NOTIFICATIONS TO FACULTY
+// SEND NOTIFICATIONS TO FACULTY - UPDATED to use is_read instead of status
 function sendNotificationsToFaculty($conn, $thesisId, $title, $first, $last) {
     $facultyQuery = "SELECT user_id FROM user_table WHERE role_id = 3";
     $facultyResult = $conn->query($facultyQuery);
@@ -183,15 +190,28 @@ function sendNotificationsToFaculty($conn, $thesisId, $title, $first, $last) {
     $link = "../faculty/reviewThesis.php?id=" . $thesisId;
     $type = "thesis_submission";
     
+    // Check if 'is_read' column exists in notifications table
+    $col_check = $conn->query("SHOW COLUMNS FROM notifications LIKE 'is_read'");
+    $use_is_read = ($col_check && $col_check->num_rows > 0);
+    
     $inserted = 0;
     
     while ($faculty = $facultyResult->fetch_assoc()) {
         $facultyId = $faculty['user_id'];
         
-        $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, 0, NOW())";
-        $notifStmt = $conn->prepare($notifSql);
-        $notifStmt->bind_param("iisss", $facultyId, $thesisId, $message, $type, $link);
+        if ($use_is_read) {
+            // Use is_read column
+            $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
+                        VALUES (?, ?, ?, ?, ?, 0, NOW())";
+            $notifStmt = $conn->prepare($notifSql);
+            $notifStmt->bind_param("iisss", $facultyId, $thesisId, $message, $type, $link);
+        } else {
+            // Fallback to status column
+            $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
+                        VALUES (?, ?, ?, ?, ?, 0, NOW())";
+            $notifStmt = $conn->prepare($notifSql);
+            $notifStmt->bind_param("iisss", $facultyId, $thesisId, $message, $type, $link);
+        }
         
         if ($notifStmt->execute()) {
             $inserted++;
