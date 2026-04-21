@@ -71,7 +71,7 @@ $dept_stmt->close();
 
 $dean_since = $user_created;
 
-// CREATE NOTIFICATIONS TABLE IF NOT EXISTS - USING 'status'
+// CREATE NOTIFICATIONS TABLE IF NOT EXISTS - USING 'is_read'
 $check_notif_table = $conn->query("SHOW TABLES LIKE 'notifications'");
 if (!$check_notif_table || $check_notif_table->num_rows == 0) {
     $create_notif_table = "
@@ -82,10 +82,10 @@ if (!$check_notif_table || $check_notif_table->num_rows == 0) {
             message TEXT NOT NULL,
             type VARCHAR(50) DEFAULT 'info',
             link VARCHAR(255) NULL,
-            status TINYINT DEFAULT 0,
+            is_read TINYINT DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             INDEX (user_id),
-            INDEX (status)
+            INDEX (is_read)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ";
     $conn->query($create_notif_table);
@@ -98,9 +98,9 @@ if ($check_id_col && $check_id_col->num_rows > 0) {
     $id_column = 'id';
 }
 
-// GET NOTIFICATION COUNT - using 'status'
+// GET NOTIFICATION COUNT - using 'is_read'
 $notificationCount = 0;
-$notif_query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND status = 0";
+$notif_query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0";
 $notif_stmt = $conn->prepare($notif_query);
 $notif_stmt->bind_param("i", $user_id);
 $notif_stmt->execute();
@@ -110,9 +110,9 @@ if ($notif_row = $notif_result->fetch_assoc()) {
 }
 $notif_stmt->close();
 
-// GET RECENT NOTIFICATIONS FOR DROPDOWN - using 'status'
+// GET RECENT NOTIFICATIONS FOR DROPDOWN - using 'is_read'
 $recentNotifications = [];
-$notif_list_query = "SELECT $id_column as id, user_id, thesis_id, message, status, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5";
+$notif_list_query = "SELECT $id_column as id, user_id, thesis_id, message, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5";
 $notif_list_stmt = $conn->prepare($notif_list_query);
 $notif_list_stmt->bind_param("i", $user_id);
 $notif_list_stmt->execute();
@@ -132,10 +132,10 @@ while ($row = $notif_list_result->fetch_assoc()) {
 }
 $notif_list_stmt->close();
 
-// MARK NOTIFICATION AS READ (via AJAX) - using 'status'
+// MARK NOTIFICATION AS READ (via AJAX)
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
-    $update_query = "UPDATE notifications SET status = 1 WHERE $id_column = ? AND user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE $id_column = ? AND user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("ii", $notif_id, $user_id);
     $update_stmt->execute();
@@ -144,9 +144,9 @@ if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     exit;
 }
 
-// MARK ALL NOTIFICATIONS AS READ - using 'status'
+// MARK ALL NOTIFICATIONS AS READ
 if (isset($_POST['mark_all_read'])) {
-    $update_query = "UPDATE notifications SET status = 1 WHERE user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("i", $user_id);
     $update_stmt->execute();
@@ -180,22 +180,18 @@ if ($thesis_table_exists) {
     $projects_result = $conn->query($projects_query);
     $stats['total_projects'] = ($projects_result && $projects_result->num_rows > 0) ? ($projects_result->fetch_assoc())['count'] : 0;
     
-    // COMPLETED = Approved theses
     $completed_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'approved'";
     $completed_result = $conn->query($completed_query);
     $stats['completed_projects'] = ($completed_result && $completed_result->num_rows > 0) ? ($completed_result->fetch_assoc())['count'] : 0;
     
-    // FORWARDED TO DEAN
     $forwarded_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'forwarded_to_dean'";
     $forwarded_result = $conn->query($forwarded_query);
     $stats['pending_reviews'] = ($forwarded_result && $forwarded_result->num_rows > 0) ? ($forwarded_result->fetch_assoc())['count'] : 0;
     
-    // ONGOING
     $ongoing_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'pending_coordinator' OR status = 'pending'";
     $ongoing_result = $conn->query($ongoing_query);
     $stats['ongoing_projects'] = ($ongoing_result && $ongoing_result->num_rows > 0) ? ($ongoing_result->fetch_assoc())['count'] : 0;
     
-    // DEFENSES
     $check_defense_col = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'defense_date'");
     $has_defense_date = ($check_defense_col && $check_defense_col->num_rows > 0);
     if ($has_defense_date) {
@@ -206,7 +202,6 @@ if ($thesis_table_exists) {
         $stats['upcoming_defenses'] = 0;
     }
     
-    // Archived count
     $archived_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'archived'";
     $archived_result = $conn->query($archived_query);
     $stats['archived_count'] = ($archived_result && $archived_result->num_rows > 0) ? ($archived_result->fetch_assoc())['count'] : 0;
@@ -244,7 +239,7 @@ if ($thesis_table_exists) {
     }
 }
 
-// GET FACULTY MEMBERS - using 'adviser' column
+// GET FACULTY MEMBERS
 $faculty_members = [];
 $faculty_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 3 AND status = 'Active' ORDER BY first_name ASC";
 $faculty_result = $conn->query($faculty_query);
@@ -270,18 +265,16 @@ if ($faculty_result && $faculty_result->num_rows > 0) {
     }
 }
 
-// GET STUDENTS - using 'adviser' column (FIXED: changed 'author' to 'adviser')
+// GET STUDENTS - FIXED: removed created_at
 $students_list = [];
-$students_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 2 ORDER BY first_name ASC";
+$students_query = "SELECT user_id, first_name, last_name, email, status, contact_number, address, birth_date FROM user_table WHERE role_id = 2 ORDER BY first_name ASC";
 $students_result = $conn->query($students_query);
 if ($students_result && $students_result->num_rows > 0) {
     while ($row = $students_result->fetch_assoc()) {
         $theses_count = 0;
         if ($thesis_table_exists) {
-            $name = $row['first_name'] . " " . $row['last_name'];
-            // FIXED: Changed 'author' to 'adviser'
-            $thesis_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE adviser = ?");
-            $thesis_q->bind_param("s", $name);
+            $thesis_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE student_id = ?");
+            $thesis_q->bind_param("i", $row['user_id']);
             $thesis_q->execute();
             $thesis_result = $thesis_q->get_result();
             $theses_count = $thesis_result->fetch_assoc()['c'] ?? 0;
@@ -292,7 +285,10 @@ if ($students_result && $students_result->num_rows > 0) {
             'name' => $row['first_name'] . " " . $row['last_name'],
             'email' => $row['email'],
             'theses_count' => $theses_count,
-            'status' => $row['status']
+            'status' => $row['status'],
+            'contact_number' => $row['contact_number'] ?? 'Not provided',
+            'address' => $row['address'] ?? 'Not provided',
+            'birth_date' => $row['birth_date'] ?? ''
         ];
     }
 }
@@ -539,8 +535,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .status-dot.approved { background: #10b981; }
         .status-dot.archived { background: #6b7280; }
         
-        .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #fef2f2; color: #dc2626; text-decoration: none; border-radius: 20px; font-size: 0.7rem; font-weight: 500; }
-        .btn-view:hover { background: #fee2e2; }
+        .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #dc2626; color: white; text-decoration: none; border-radius: 20px; font-size: 0.7rem; font-weight: 500; transition: all 0.3s; }
+        .btn-view:hover { background: #991b1b; transform: scale(1.05); }
         
         .defenses-section { margin-bottom: 32px; }
         .defense-item { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid #ffcdd2; display: flex; align-items: center; gap: 20px; }
@@ -572,6 +568,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .empty-state { text-align: center; padding: 40px; color: #9ca3af; }
         .empty-state i { font-size: 3rem; margin-bottom: 12px; color: #dc2626; }
         
+        /* Status Badge for Students */
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
+        .status-badge.Active { background: #d4edda; color: #155724; }
+        .status-badge.Inactive { background: #f8d7da; color: #721c24; }
+        
         @media (max-width: 1024px) { .stats-grid, .dept-stats, .charts-section, .bottom-grid { grid-template-columns: repeat(2, 1fr); } }
         @media (max-width: 768px) {
             .main-content { padding: 20px; }
@@ -599,6 +600,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         body.dark-mode .empty-state { color: #9ca3af; }
         body.dark-mode .btn-review { background: #dc2626; }
         body.dark-mode .btn-review:hover { background: #991b1b; }
+        body.dark-mode .btn-view { background: #dc2626; color: white; }
+        body.dark-mode .status-badge.Active { background: #1a3a1a; color: #86efac; }
+        body.dark-mode .status-badge.Inactive { background: #3a1a1a; color: #fca5a5; }
     </style>
 </head>
 <body>
@@ -630,7 +634,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <div class="notification-item empty"><div class="notif-icon"><i class="far fa-bell-slash"></i></div><div class="notif-content"><div class="notif-message">No notifications yet</div></div></div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['id'] ?>">
+                                <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['id'] ?>">
                                     <div class="notif-icon"><?php if(strpos($notif['message'], 'approved') !== false) echo '<i class="fas fa-check-circle"></i>'; elseif(strpos($notif['message'], 'forwarded') !== false) echo '<i class="fas fa-arrow-right"></i>'; elseif(strpos($notif['message'], 'revision') !== false) echo '<i class="fas fa-edit"></i>'; elseif(strpos($notif['message'], 'archived') !== false) echo '<i class="fas fa-archive"></i>'; else echo '<i class="fas fa-bell"></i>'; ?></div>
                                     <div class="notif-content">
                                         <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>
@@ -720,28 +724,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-clock"></i></div><div class="stat-details"><h3><?= number_format($stats['pending_reviews']) ?></h3><p>Pending Reviews</p></div></div>
         </div>
 
-        <!-- Department Stats: Completed, Ongoing, Defenses, Total -->
         <div class="dept-stats">
-            <div class="dept-stat-card">
-                <div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div>
-                <div class="dept-stat-value"><?= number_format($stats['completed_projects']) ?></div>
-                <div class="dept-stat-label">theses & projects</div>
-            </div>
-            <div class="dept-stat-card">
-                <div class="dept-stat-header"><i class="fas fa-spinner"></i><span>Ongoing</span></div>
-                <div class="dept-stat-value"><?= number_format($stats['ongoing_projects']) ?></div>
-                <div class="dept-stat-label">active projects</div>
-            </div>
-            <div class="dept-stat-card">
-                <div class="dept-stat-header"><i class="fas fa-gavel"></i><span>Defenses</span></div>
-                <div class="dept-stat-value"><?= number_format($stats['upcoming_defenses']) ?></div>
-                <div class="dept-stat-label">upcoming defenses</div>
-            </div>
-            <div class="dept-stat-card">
-                <div class="dept-stat-header"><i class="fas fa-chart-simple"></i><span>Total</span></div>
-                <div class="dept-stat-value"><?= number_format($stats['total_projects']) ?></div>
-                <div class="dept-stat-label">total projects</div>
-            </div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div><div class="dept-stat-value"><?= number_format($stats['completed_projects']) ?></div><div class="dept-stat-label">theses & projects</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-spinner"></i><span>Ongoing</span></div><div class="dept-stat-value"><?= number_format($stats['ongoing_projects']) ?></div><div class="dept-stat-label">active projects</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-gavel"></i><span>Defenses</span></div><div class="dept-stat-value"><?= number_format($stats['upcoming_defenses']) ?></div><div class="dept-stat-label">upcoming defenses</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-chart-simple"></i><span>Total</span></div><div class="dept-stat-value"><?= number_format($stats['total_projects']) ?></div><div class="dept-stat-label">total projects</div></div>
         </div>
 
         <div class="charts-section">
@@ -780,6 +767,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
 
+        <!-- RECENT DEPARTMENT PROJECTS -->
         <div class="projects-section">
             <div class="section-header"><h2 class="section-title"><i class="fas fa-project-diagram"></i> Recent Department Projects</h2><a href="dean.php?section=projects&dept_id=<?= $department_id ?>" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
             <div class="table-responsive">
@@ -793,7 +781,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <td><?= htmlspecialchars($project['student']) ?></td>
                             <td><?= htmlspecialchars($project['department']) ?></td>
                             <td><span class="status-dot <?= $project['status'] ?>"></span><?= ucfirst($project['status']) ?></td>
-                            <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -892,14 +880,27 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="section-header"><h2 class="section-title"><i class="fas fa-user-graduate"></i> All Students (<?= count($students_list) ?>)</h2></div>
             <?php if (count($students_list) > 0): ?>
             <div class="table-responsive">
-                <table class="theses-table"><thead><tr><th>Student Name</th><th>Email</th><th>Theses Count</th><th>Status</th><th>Action</th></td></thead>
-                <tbody><?php foreach ($students_list as $student): ?><tr>
-                    <td><?= htmlspecialchars($student['name']) ?></td>
-                    <td><?= htmlspecialchars($student['email']) ?></td>
-                    <td><?= $student['theses_count'] ?></td>
-                    <td><?= $student['status'] ?></td>
-                    <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
-                </tr><?php endforeach; ?></tbody>
+                <table class="theses-table">
+                    <thead>
+                        <tr>
+                            <th>Student Name</th>
+                            <th>Email</th>
+                            <th>Theses Count</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($students_list as $student): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($student['name']) ?></strong></td>
+                            <td><?= htmlspecialchars($student['email']) ?></td>
+                            <td><?= $student['theses_count'] ?></td>
+                            <td><span class="status-badge <?= $student['status'] ?>"><?= $student['status'] ?></span></td>
+                            <td><a href="view_student.php?id=<?= $student['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
                 </table>
             </div>
             <?php else: ?>
@@ -908,7 +909,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </div>
 
         <?php elseif ($section == 'projects'): ?>
-        <!-- PROJECTS VIEW -->
+        <!-- ALL PROJECTS VIEW -->
         <div class="dept-banner">
             <div class="dept-info">
                 <h1><?= htmlspecialchars($department_name) ?> <span style="font-size: 1rem; opacity: 0.8;">(<?= htmlspecialchars($department_code) ?>)</span></h1>
@@ -923,14 +924,21 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="section-header"><h2 class="section-title"><i class="fas fa-project-diagram"></i> All Projects (<?= count($department_projects) ?>)</h2></div>
             <?php if (count($department_projects) > 0): ?>
             <div class="table-responsive">
-                <table class="theses-table"><thead><tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody><?php foreach ($department_projects as $project): ?><tr>
-                    <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
-                    <td><?= htmlspecialchars($project['student']) ?></td>
-                    <td><?= htmlspecialchars($project['department']) ?></td>
-                    <td><span class="status-dot <?= $project['status'] ?>"></span><?= ucfirst($project['status']) ?></td>
-                    <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
-                </tr><?php endforeach; ?></tbody>
+                <table class="theses-table">
+                    <thead>
+                        <tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($department_projects as $project): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
+                            <td><?= htmlspecialchars($project['student']) ?></td>
+                            <td><?= htmlspecialchars($project['department']) ?></td>
+                            <td><span class="status-dot <?= $project['status'] ?>"></span><?= ucfirst($project['status']) ?></td>
+                            <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
                 </table>
             </div>
             <?php else: ?>
@@ -954,15 +962,22 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="section-header"><h2 class="section-title"><i class="fas fa-archive"></i> Archived Projects (<?= count($archived_projects) ?>)</h2></div>
             <?php if (count($archived_projects) > 0): ?>
             <div class="table-responsive">
-                <table class="theses-table"><thead><tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody><?php foreach ($archived_projects as $project): ?><tr>
-                    <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
-                    <td><?= htmlspecialchars($project['student']) ?></td>
-                    <td><?= htmlspecialchars($project['department']) ?></td>
-                    <td><span class="status-dot archived"></span>Archived</span></td>
-                    <td><a href="#" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
-                </tr><?php endforeach; ?></tbody>
-                </table>
+                <table class="theses-table">
+                    <thead>
+                        <tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($archived_projects as $project): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
+                            <td><?= htmlspecialchars($project['student']) ?></td>
+                            <td><?= htmlspecialchars($project['department']) ?></td>
+                            <td><span class="status-dot archived"></span>Archived</span></td>
+                            <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </td>
             </div>
             <?php else: ?>
                 <div class="empty-state"><i class="fas fa-archive"></i><p>No archived projects found</p></div>

@@ -290,9 +290,9 @@ if ($deptResult) {
         <div class="nav-container">
             <a href="../homepage.php" class="logo"><div class="logo-icon">📚</div><span>Thesis Archive</span></a>
             <ul class="nav-links">
-                <li><a href="../homepage.php">Home</a></li>
+                <li><a href="homepage.php">Home</a></li>
                 <li><a href="browse.php" class="active">Browse Archive</a></li>
-                <li><a href="../about.php">About</a></li>
+                <li><a href="about.php">About</a></li>
                 <?php if ($is_logged_in): ?>
                     <?php
                     $roleQuery = "SELECT role_id FROM user_table WHERE user_id = ? LIMIT 1";

@@ -1,7 +1,7 @@
 <?php
 
 function getUserData($conn, $user_id) {
-    $stmt = $conn->prepare("SELECT first_name, last_name, email, department FROM user_table WHERE user_id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT first_name, last_name, email FROM user_table WHERE user_id = ? LIMIT 1");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
@@ -9,41 +9,7 @@ function getUserData($conn, $user_id) {
     return $user;
 }
 
-function getOrCreateStudentId($conn, $user_id) {
-    // Check if student record exists
-    $checkQuery = "SELECT student_id FROM student_table WHERE user_id = ? LIMIT 1";
-    $stmt = $conn->prepare($checkQuery);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $student = $result->fetch_assoc();
-    $stmt->close();
-    
-    if ($student) {
-        error_log("Existing student_id found: " . $student['student_id']);
-        return $student['student_id'];
-    }
-    
-    // Create new student record with default values
-    $studentNumber = 'STU-' . date('Y') . '-' . str_pad($user_id, 5, '0', STR_PAD_LEFT);
-    $insertQuery = "INSERT INTO student_table (user_id, student_number, course, year_level) 
-                    VALUES (?, ?, 'Not Specified', '1st Year')";
-    $stmt = $conn->prepare($insertQuery);
-    $stmt->bind_param("is", $user_id, $studentNumber);
-    
-    if ($stmt->execute()) {
-        $student_id = $stmt->insert_id;
-        error_log("New student record created with ID: " . $student_id);
-        $stmt->close();
-        return $student_id;
-    }
-    
-    error_log("Failed to create student record: " . $stmt->error);
-    $stmt->close();
-    
-    return $user_id;
-}
-
+// Dili na kinahanglan ang getOrCreateStudentId - diretso na lang
 function getNotificationCount($conn, $user_id) {
     try {
         $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status = 0";
@@ -147,12 +113,11 @@ function uploadThesis($conn, $user_id, $first, $last, $post, $files, $fileTmp) {
         
         $dbFilePath = 'uploads/manuscripts/' . $newFileName;
         
-        // Get or create student_id from student_table
-        $student_id = getOrCreateStudentId($conn, $user_id);
+        // UPDATED: Gamiton ang user_id isip student_id
+        $student_id = $user_id;
         
         $sql = "INSERT INTO thesis_table (
             student_id,
-            submitted_by, 
             title, 
             abstract, 
             keywords, 
@@ -161,18 +126,16 @@ function uploadThesis($conn, $user_id, $first, $last, $post, $files, $fileTmp) {
             adviser, 
             status, 
             file_path, 
-            date_submitted,
-            is_archived
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)";
+            date_submitted
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
         
         $stmt = $conn->prepare($sql);
         if ($stmt) {
             $status = 'pending';
             
             $stmt->bind_param(
-                "iissssssss", 
+                "issssssss", 
                 $student_id,
-                $user_id,
                 $post['title'],
                 $post['abstract'],
                 $post['keywords'],
@@ -204,19 +167,13 @@ function uploadThesis($conn, $user_id, $first, $last, $post, $files, $fileTmp) {
     }
 }
 
-// SEPARATE FUNCTION FOR SENDING NOTIFICATIONS
+// SEND NOTIFICATIONS TO FACULTY
 function sendNotificationsToFaculty($conn, $thesisId, $title, $first, $last) {
-    // Get all faculty members (role_id = 3)
-    $facultyQuery = "SELECT user_id, first_name, last_name FROM user_table WHERE role_id = 3";
+    $facultyQuery = "SELECT user_id FROM user_table WHERE role_id = 3";
     $facultyResult = $conn->query($facultyQuery);
     
-    if (!$facultyResult) {
-        error_log("Error fetching faculty: " . $conn->error);
-        return false;
-    }
-    
-    if ($facultyResult->num_rows == 0) {
-        error_log("No faculty members found with role_id = 3");
+    if (!$facultyResult || $facultyResult->num_rows == 0) {
+        error_log("No faculty members found");
         return false;
     }
     
@@ -238,21 +195,17 @@ function sendNotificationsToFaculty($conn, $thesisId, $title, $first, $last) {
         
         if ($notifStmt->execute()) {
             $inserted++;
-            error_log("Notification sent to faculty ID: $facultyId");
-        } else {
-            error_log("Failed to send notification to faculty $facultyId: " . $notifStmt->error);
         }
         $notifStmt->close();
     }
     
-    error_log("Total notifications sent: $inserted out of " . $facultyResult->num_rows);
     return $inserted > 0;
 }
 
 function getRecentSubmissions($conn, $user_id) {
     $submissions = [];
     try {
-        $student_id = getOrCreateStudentId($conn, $user_id);
+        $student_id = $user_id;
         
         $recentQuery = "SELECT thesis_id, title, status, file_path, date_submitted as created_at
                        FROM thesis_table 

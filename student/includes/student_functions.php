@@ -10,17 +10,7 @@ function getUserData($conn, $user_id) {
 }
 
 function getUserDetails($conn, $user_id) {
-    // Find the correct user_id column
-    $user_columns = $conn->query("SHOW COLUMNS FROM user_table");
-    $user_id_column = 'user_id';
-    while ($column = $user_columns->fetch_assoc()) {
-        if (strpos($column['Field'], 'user') !== false || strpos($column['Field'], 'id') !== false) {
-            $user_id_column = $column['Field'];
-            break;
-        }
-    }
-    
-    $stmt = $conn->prepare("SELECT first_name, last_name FROM user_table WHERE $user_id_column = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT first_name, last_name FROM user_table WHERE user_id = ? LIMIT 1");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
@@ -28,20 +18,10 @@ function getUserDetails($conn, $user_id) {
     return $user;
 }
 
+// UPDATED: Dili na mogamit og student_table - user_id na mismo ang student_id
 function getStudentId($conn, $user_id) {
-    $student_id = $user_id;
-    $studentQuery = "SELECT student_id FROM student_table WHERE user_id = ? LIMIT 1";
-    $stmt = $conn->prepare($studentQuery);
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $studentResult = $stmt->get_result();
-    $studentData = $studentResult->fetch_assoc();
-    $stmt->close();
-    
-    if ($studentData) {
-        $student_id = $studentData['student_id'];
-    }
-    return $student_id;
+    // Diretso na lang, ang user_id kay mao na ang student_id
+    return $user_id;
 }
 
 function getThesisCount($conn, $student_id, $status) {
@@ -154,7 +134,7 @@ function getNotifications($conn, $user_id) {
         
         $unreadCount = 0;
         foreach ($recentNotifications as $notif) {
-            if ($notif['status'] == 'unread') {
+            if ($notif['status'] == 0 || $notif['status'] == 'unread') {
                 $unreadCount++;
             }
         }
@@ -171,6 +151,7 @@ function getNotifications($conn, $user_id) {
 function getRecentFeedback($conn, $student_id) {
     $recentFeedback = [];
     try {
+        // I-update ang query - gamit ang thesis_table imbes theses
         $feedbackQuery = "SELECT 
                             f.*, 
                             t.title as thesis_title, 
@@ -181,7 +162,7 @@ function getRecentFeedback($conn, $student_id) {
                             f.comments as feedback_text,
                             f.feedback_date
                           FROM feedback_table f
-                          JOIN theses t ON f.thesis_id = t.thesis_id
+                          JOIN thesis_table t ON f.thesis_id = t.thesis_id
                           JOIN user_table u ON f.faculty_id = u.user_id
                           WHERE t.student_id = ?
                           ORDER BY f.feedback_date DESC

@@ -861,14 +861,16 @@ $pageTitle = "Submit Thesis";
                         <small class="form-text">Separate keywords with commas. At least 3 keywords.</small>
                     </div>
 
+                    <!-- UPDATED DEPARTMENT SECTION - BSIT, BSCRIM, BSHTM, BSED, BSBA -->
                     <div class="form-group">
                         <label for="department"><i class="fas fa-building"></i> Department <span class="required">*</span></label>
                         <select id="department" name="department" required>
                             <option value="">Select Department</option>
-                            <option value="CS" <?= (isset($_POST['department']) && $_POST['department'] == 'CS') ? 'selected' : '' ?>>Computer Science</option>
-                            <option value="IT" <?= (isset($_POST['department']) && $_POST['department'] == 'IT') ? 'selected' : '' ?>>Information Technology</option>
-                            <option value="ENG" <?= (isset($_POST['department']) && $_POST['department'] == 'ENG') ? 'selected' : '' ?>>Engineering</option>
-                            <option value="BUS" <?= (isset($_POST['department']) && $_POST['department'] == 'BUS') ? 'selected' : '' ?>>Business</option>
+                            <option value="BSIT" <?= (isset($_POST['department']) && $_POST['department'] == 'BSIT') ? 'selected' : '' ?>>BS Information Technology (BSIT)</option>
+                            <option value="BSCRIM" <?= (isset($_POST['department']) && $_POST['department'] == 'BSCRIM') ? 'selected' : '' ?>>BS Criminology (BSCRIM)</option>
+                            <option value="BSHTM" <?= (isset($_POST['department']) && $_POST['department'] == 'BSHTM') ? 'selected' : '' ?>>BS Hospitality Management (BSHTM)</option>
+                            <option value="BSED" <?= (isset($_POST['department']) && $_POST['department'] == 'BSED') ? 'selected' : '' ?>>BS Education (BSED)</option>
+                            <option value="BSBA" <?= (isset($_POST['department']) && $_POST['department'] == 'BSBA') ? 'selected' : '' ?>>BS Business Administration (BSBA)</option>
                         </select>
                     </div>
 

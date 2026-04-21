@@ -275,7 +275,29 @@ $total_users = $conn->query("SELECT COUNT(*) as c FROM user_table")->fetch_assoc
 $active_users = $conn->query("SELECT COUNT(*) as c FROM user_table WHERE status = 'Active'")->fetch_assoc()['c'];
 $inactive_users = $total_users - $active_users;
 
-// ==================== GET NOTIFICATION COUNT - FIXED ====================
+// Group users by role
+$users_by_role = [];
+foreach ($roles as $role_id => $role_name) {
+    $users_by_role[$role_id] = [
+        'name' => $role_name,
+        'users' => [],
+        'count' => 0
+    ];
+}
+
+// Reset the result pointer and fetch all users
+$all_users = [];
+$users->data_seek(0);
+while ($user = $users->fetch_assoc()) {
+    $all_users[] = $user;
+    $role_id = $user['role_id'];
+    if (isset($users_by_role[$role_id])) {
+        $users_by_role[$role_id]['users'][] = $user;
+        $users_by_role[$role_id]['count']++;
+    }
+}
+
+// GET NOTIFICATION COUNT
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows) {
@@ -298,7 +320,6 @@ if ($notif_check && $notif_check->num_rows) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* All your existing CSS styles remain the same */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
         
@@ -381,11 +402,20 @@ if ($notif_check && $notif_check->num_rows) {
         .add-user-btn { background: #d32f2f; color: white; border: none; padding: 10px 24px; border-radius: 40px; cursor: pointer; font-weight: 500; transition: all 0.2s; margin-left: auto; display: flex; align-items: center; gap: 8px; }
         .add-user-btn:hover { background: #b71c1c; transform: translateY(-2px); }
         
-        .users-section { background: white; border-radius: 20px; padding: 25px; border: 1px solid #ffcdd2; }
-        .table-responsive { overflow-x: auto; }
+        /* Role Sections */
+        .role-section { background: white; border-radius: 20px; margin-bottom: 25px; border: 1px solid #ffcdd2; overflow: hidden; }
+        .role-header { background: #fef2f2; padding: 15px 20px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ffcdd2; transition: all 0.2s; }
+        .role-header:hover { background: #fee2e2; }
+        .role-title { display: flex; align-items: center; gap: 12px; font-size: 1rem; font-weight: 600; color: #d32f2f; }
+        .role-title i { font-size: 1.2rem; }
+        .role-count { background: #d32f2f; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .role-toggle { color: #6b7280; font-size: 0.8rem; }
+        .role-body { padding: 20px; display: none; }
+        .role-body.show { display: block; }
+        
         .users-table { width: 100%; border-collapse: collapse; }
-        .users-table th { text-align: left; padding: 14px 12px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #ffcdd2; }
-        .users-table td { padding: 14px 12px; border-bottom: 1px solid #ffebee; font-size: 0.85rem; vertical-align: middle; }
+        .users-table th { text-align: left; padding: 12px 12px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #ffcdd2; }
+        .users-table td { padding: 12px 12px; border-bottom: 1px solid #ffebee; font-size: 0.85rem; vertical-align: middle; }
         .users-table tr:hover td { background: #ffebee; }
         .user-name-cell { display: flex; align-items: center; gap: 12px; }
         .user-avatar-small { width: 34px; height: 34px; background: linear-gradient(135deg, #d32f2f, #b71c1c); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.8rem; }
@@ -401,6 +431,9 @@ if ($notif_check && $notif_check->num_rows) {
         .action-btn.toggle-status:hover { background: #fffbeb; transform: scale(1.05); }
         .action-btn.delete { color: #ef4444; }
         .action-btn.delete:hover { background: #fef2f2; transform: scale(1.05); }
+        
+        .empty-state { text-align: center; padding: 40px; color: #6b7280; }
+        .empty-state i { font-size: 3rem; margin-bottom: 15px; color: #d32f2f; }
         
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1100; align-items: center; justify-content: center; }
         .modal.show { display: flex; }
@@ -421,9 +454,6 @@ if ($notif_check && $notif_check->num_rows) {
         .btn-save { background: #d32f2f; color: white; border: none; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-weight: 500; }
         .btn-save:hover { background: #b71c1c; }
         
-        .empty-state { text-align: center; padding: 60px; color: #6b7280; }
-        .empty-state i { font-size: 3rem; margin-bottom: 15px; color: #d32f2f; }
-        
         .alert { padding: 12px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
         .alert-success { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
         .alert-error { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
@@ -438,7 +468,8 @@ if ($notif_check && $notif_check->num_rows) {
         body.dark-mode .search-area { background: #334155; border-color: #475569; }
         body.dark-mode .search-area input { color: white; }
         body.dark-mode .profile-name { color: #e5e7eb; }
-        body.dark-mode .stat-card, body.dark-mode .filter-bar, body.dark-mode .users-section { background: #1e293b; border-color: #334155; }
+        body.dark-mode .stat-card, body.dark-mode .filter-bar, body.dark-mode .role-section { background: #1e293b; border-color: #334155; }
+        body.dark-mode .role-header { background: #334155; border-bottom-color: #475569; }
         body.dark-mode .stat-details h3 { color: #fecaca; }
         body.dark-mode .users-table td { color: #e5e7eb; border-bottom-color: #334155; }
         body.dark-mode .users-table th { color: #94a3b8; border-bottom-color: #334155; }
@@ -466,6 +497,9 @@ if ($notif_check && $notif_check->num_rows) {
             .filter-bar { flex-direction: column; align-items: stretch; }
             .filter-input, .filter-select, .filter-btn, .clear-btn, .add-user-btn { width: 100%; margin-left: 0; }
             .form-row { grid-template-columns: 1fr; }
+            .users-table th, .users-table td { display: block; width: 100%; }
+            .users-table td { padding: 8px 12px; }
+            .action-buttons { justify-content: flex-start; }
         }
     </style>
 </head>
@@ -509,7 +543,7 @@ if ($notif_check && $notif_check->num_rows) {
     <main class="main-content">
         <div class="page-header">
             <h1><i class="fas fa-users"></i> User Management</h1>
-            <p>Manage all system users - view, edit, activate/deactivate, and delete user accounts</p>
+            <p>Manage all system users - grouped by role for easier management</p>
         </div>
         
         <?php if ($message): ?>
@@ -543,37 +577,56 @@ if ($notif_check && $notif_check->num_rows) {
             <button id="addUserBtn" class="add-user-btn"><i class="fas fa-plus"></i> Add User</button>
         </div>
         
-        <div class="users-section">
-            <div class="table-responsive">
-                <table class="users-table">
-                    <thead>
-                        <tr><th>#</th><th>User Name</th><th>Email</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr>
-                    </thead>
-                    <tbody id="usersTableBody">
-                        <?php if ($users->num_rows == 0): ?>
-                            <tr><td colspan="7" class="empty-state"><i class="fas fa-users-slash"></i><p>No users found</p></td></tr>
-                        <?php else: ?>
-                            <?php $counter = 1; ?>
-                            <?php while ($user = $users->fetch_assoc()): ?>
-                            <tr>
-                                <td>#<?= $counter++ ?></td>
-                                <td><div class="user-name-cell"><div class="user-avatar-small"><?= strtoupper(substr($user['first_name'], 0, 1) . substr($user['last_name'], 0, 1)) ?></div><span><?= htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) ?></span></div></td>
-                                <td><?= htmlspecialchars($user['email']) ?></td>
-                                <td><?= htmlspecialchars($user['username']) ?></td>
-                                <td><span class="role-badge"><?= htmlspecialchars($roles[$user['role_id']] ?? 'Unknown') ?></span></td>
-                                <td><span class="status-badge <?= strtolower($user['status']) ?>"><?= $user['status'] ?></span></td>
-                                <td class="action-buttons">
-                                    <button class="action-btn edit" onclick="editUser(<?= $user['user_id'] ?>)"><i class="fas fa-edit"></i></button>
-                                    <button class="action-btn toggle-status" onclick="toggleStatus(<?= $user['user_id'] ?>, '<?= $user['status'] ?>')"><i class="fas <?= $user['status'] == 'Active' ? 'fa-ban' : 'fa-check-circle' ?>"></i></button>
-                                    <button class="action-btn delete" onclick="deleteUser(<?= $user['user_id'] ?>)"><i class="fas fa-trash"></i></button>
-                                </td>
-                            </tr>
-                            <?php endwhile; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+        <!-- Users Grouped by Role -->
+        <?php foreach ($users_by_role as $role_id => $role_data): ?>
+            <?php if ($role_data['count'] > 0 || (empty($role_filter) && empty($search) && empty($status_filter))): ?>
+            <div class="role-section">
+                <div class="role-header" onclick="toggleRoleSection(this)">
+                    <div class="role-title">
+                        <i class="fas <?= $role_id == 1 ? 'fa-user-shield' : ($role_id == 2 ? 'fa-user-graduate' : ($role_id == 3 ? 'fa-chalkboard-user' : ($role_id == 4 ? 'fa-user-tie' : ($role_id == 5 ? 'fa-book-reader' : 'fa-clipboard-list')))) ?>"></i>
+                        <?= htmlspecialchars($role_data['name']) ?>
+                        <span class="role-count"><?= $role_data['count'] ?></span>
+                    </div>
+                    <div class="role-toggle">
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+                <div class="role-body">
+                    <?php if (empty($role_data['users'])): ?>
+                        <div class="empty-state">
+                            <i class="fas fa-user-slash"></i>
+                            <p>No <?= htmlspecialchars($role_data['name']) ?> users found.</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="users-table">
+                                <thead>
+                                    <tr><th>#</th><th>User Name</th><th>Email</th><th>Username</th><th>Status</th><th>Actions</th></tr>
+                                </thead>
+                                <tbody>
+                                    <?php $counter = 1; ?>
+                                    <?php foreach ($role_data['users'] as $user): ?>
+                                    <tr>
+                                        <td><?= $counter++ ?></td>
+                                        <td><div class="user-name-cell"><div class="user-avatar-small"><?= strtoupper(substr($user['first_name'], 0, 1) . substr($user['last_name'], 0, 1)) ?></div><span><?= htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) ?></span></div></td>
+                                        <td><?= htmlspecialchars($user['email']) ?></td>
+                                        <td><?= htmlspecialchars($user['username']) ?></td>
+                                        <td><span class="status-badge <?= strtolower($user['status']) ?>"><?= $user['status'] ?></span></td>
+                                        <td class="action-buttons">
+                                            <button class="action-btn edit" onclick="editUser(<?= $user['user_id'] ?>)"><i class="fas fa-edit"></i></button>
+                                            <button class="action-btn toggle-status" onclick="toggleStatus(<?= $user['user_id'] ?>, '<?= $user['status'] ?>')"><i class="fas <?= $user['status'] == 'Active' ? 'fa-ban' : 'fa-check-circle' ?>"></i></button>
+                                            <button class="action-btn delete" onclick="deleteUser(<?= $user['user_id'] ?>)"><i class="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
+            <?php endif; ?>
+        <?php endforeach; ?>
     </main>
     
     <!-- Add/Edit User Modal -->
@@ -620,6 +673,35 @@ if ($notif_check && $notif_check->num_rows) {
         const modalTitle = document.getElementById('modalTitle');
         const userForm = document.getElementById('userForm');
         const formAction = document.getElementById('form_action');
+
+        // Role section toggle function
+        function toggleRoleSection(header) {
+            const body = header.nextElementSibling;
+            const icon = header.querySelector('.role-toggle i');
+            body.classList.toggle('show');
+            if (body.classList.contains('show')) {
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+            } else {
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            }
+        }
+
+        // Open all role sections by default
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.role-body').forEach(body => {
+                body.classList.add('show');
+                const header = body.previousElementSibling;
+                if (header) {
+                    const icon = header.querySelector('.role-toggle i');
+                    if (icon) {
+                        icon.classList.remove('fa-chevron-down');
+                        icon.classList.add('fa-chevron-up');
+                    }
+                }
+            });
+        });
 
         function openSidebar() { sidebar.classList.add('open'); sidebarOverlay.classList.add('show'); document.body.style.overflow = 'hidden'; }
         function closeSidebar() { sidebar.classList.remove('open'); sidebarOverlay.classList.remove('show'); document.body.style.overflow = ''; }
@@ -717,7 +799,7 @@ if ($notif_check && $notif_check->num_rows) {
         window.addEventListener('click', function(e) { if (e.target === userModal) closeModal(); });
 
         initDarkMode();
-        console.log('User Management Page Initialized - Menu Bar Style Sidebar');
+        console.log('User Management Page Initialized - Grouped by Role');
     </script>
 </body>
 </html>

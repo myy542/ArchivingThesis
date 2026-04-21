@@ -42,6 +42,23 @@ if ($check_thesis && $check_thesis->num_rows > 0) {
     $thesis_table_exists = true;
 }
 
+// ==================== GET ALL PENDING THESES (for list view) ====================
+$pending_theses_list = [];
+if ($thesis_table_exists && $thesis_id == 0) {
+    $pending_query = "SELECT t.*, u.first_name, u.last_name, u.email 
+                      FROM thesis_table t
+                      JOIN user_table u ON t.student_id = u.user_id
+                      WHERE t.status = 'pending_coordinator'
+                      ORDER BY t.date_submitted DESC";
+    $pending_result = $conn->query($pending_query);
+    if ($pending_result && $pending_result->num_rows > 0) {
+        while ($row = $pending_result->fetch_assoc()) {
+            $pending_theses_list[] = $row;
+        }
+    }
+}
+
+// ==================== GET SINGLE THESIS DETAILS (for review view) ====================
 $thesis = null;
 $thesis_title = 'Unknown Thesis';
 $thesis_author = 'Unknown Author';
@@ -50,9 +67,10 @@ $thesis_file = '';
 $thesis_date = '';
 $thesis_status = '';
 $student_name = '';
+$student_id = null;
 
 if ($thesis_id > 0 && $thesis_table_exists) {
-    $thesis_query = "SELECT t.*, u.first_name, u.last_name, u.email, u.user_id 
+    $thesis_query = "SELECT t.*, u.first_name, u.last_name, u.email, u.user_id as student_user_id
                      FROM thesis_table t
                      JOIN user_table u ON t.student_id = u.user_id
                      WHERE t.thesis_id = ?";
@@ -69,13 +87,9 @@ if ($thesis_id > 0 && $thesis_table_exists) {
         $thesis_date = isset($thesis_row['date_submitted']) ? date('M d, Y', strtotime($thesis_row['date_submitted'])) : date('M d, Y');
         $thesis_status = $thesis_row['status'] ?? 'pending';
         $student_name = $thesis_row['first_name'] . ' ' . $thesis_row['last_name'];
+        $student_id = $thesis_row['student_user_id'];
     }
     $thesis_stmt->close();
-}
-
-if (!$thesis) {
-    header("Location: coordinatorDashboard.php");
-    exit;
 }
 
 $message = '';
@@ -89,8 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['forward_to_dean'])) {
     $conn->begin_transaction();
     
     try {
-        // Update thesis status to 'forwarded_to_dean'
-        $updateQuery = "UPDATE thesis_table SET status = 'forwarded_to_dean' WHERE thesis_id = ?";
+        $updateQuery = "UPDATE thesis_table SET status = 'forwarded_to_dean', forwarded_to_dean_at = NOW() WHERE thesis_id = ?";
         $stmt = $conn->prepare($updateQuery);
         $stmt->bind_param("i", $thesis_id_post);
         $stmt->execute();
@@ -101,82 +114,89 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['forward_to_dean'])) {
         $dean_result = $conn->query($dean_query);
         if ($dean_result && $dean_result->num_rows > 0) {
             $notifMessage = "📋 Thesis ready for Dean approval: \"" . $thesis_title . "\" from student " . $student_name . ". Forwarded by Coordinator: " . $coordinator_name;
+            $insert_notif = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'dean_forward', 0, NOW())";
+            $insert_stmt = $conn->prepare($insert_notif);
+            
             while ($dean = $dean_result->fetch_assoc()) {
                 $dean_id = $dean['user_id'];
-                $insert_notif = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'dean_forward', 0, NOW())";
-                $insert_stmt = $conn->prepare($insert_notif);
                 $insert_stmt->bind_param("iis", $dean_id, $thesis_id_post, $notifMessage);
                 $insert_stmt->execute();
-                $insert_stmt->close();
             }
+            $insert_stmt->close();
         }
+        
+        // Notify student
+        $student_notif = "📢 Your thesis \"" . $thesis_title . "\" has been forwarded to the Dean for final approval by Coordinator " . $coordinator_name;
+        $insert_student = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'student_notif', 0, NOW())";
+        $student_stmt = $conn->prepare($insert_student);
+        $student_stmt->bind_param("iis", $student_id, $thesis_id_post, $student_notif);
+        $student_stmt->execute();
+        $student_stmt->close();
         
         $conn->commit();
         
         $_SESSION['success_message'] = "✓ Thesis forwarded to Dean successfully!";
-        header("Location: coordinatorDashboard.php?msg=forwarded");
+        header("Location: coordinatorDashboard.php");
         exit();
         
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['error_message'] = "Error: " . $e->getMessage();
-        header("Location: coordinatorDashboard.php?msg=error");
+        header("Location: coordinatorDashboard.php");
         exit();
     }
 }
 
-// ==================== HANDLE REJECT/REVISE ====================
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_thesis'])) {
+// ==================== HANDLE REQUEST REVISIONS ====================
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['request_revision'])) {
     $thesis_id_post = intval($_POST['thesis_id']);
     $revision_feedback = isset($_POST['feedback']) ? trim($_POST['feedback']) : '';
+    $coordinator_name = $fullName;
     
     $conn->begin_transaction();
     
     try {
-        // Update thesis status to 'pending' (back to faculty for revision)
-        $updateQuery = "UPDATE thesis_table SET status = 'pending', feedback = ? WHERE thesis_id = ?";
-        $update_stmt = $conn->prepare($updateQuery);
-        $update_stmt->bind_param("si", $revision_feedback, $thesis_id_post);
-        $update_stmt->execute();
-        $update_stmt->close();
+        $updateQuery = "UPDATE thesis_table SET status = 'pending', revision_feedback = ?, revised_at = NOW() WHERE thesis_id = ?";
+        $stmt = $conn->prepare($updateQuery);
+        $stmt->bind_param("si", $revision_feedback, $thesis_id_post);
+        $stmt->execute();
+        $stmt->close();
         
-        // Get faculty (adviser) who submitted this thesis
-        $faculty_query = "SELECT student_id FROM thesis_table WHERE thesis_id = ?";
-        $faculty_stmt = $conn->prepare($faculty_query);
-        $faculty_stmt->bind_param("i", $thesis_id_post);
-        $faculty_stmt->execute();
-        $faculty_result = $faculty_stmt->get_result();
-        $student_id = null;
-        if ($faculty_row = $faculty_result->fetch_assoc()) {
-            $student_id = $faculty_row['student_id'];
-        }
-        $faculty_stmt->close();
+        // Get faculty advisers
+        $faculty_query = "SELECT user_id FROM user_table WHERE role_id = 3";
+        $faculty_result = $conn->query($faculty_query);
         
-        // Get faculty adviser (role_id = 3)
-        $adviser_query = "SELECT user_id FROM user_table WHERE role_id = 3 LIMIT 1";
-        $adviser_result = $conn->query($adviser_query);
-        if ($adviser_result && $adviser_result->num_rows > 0) {
-            $adviser = $adviser_result->fetch_assoc();
-            $adviser_id = $adviser['user_id'];
-            
-            $notifMessage = "📝 Revision requested for thesis: \"" . $thesis_title . "\". Coordinator feedback: " . $revision_feedback . ". Please revise and resubmit.";
+        if ($faculty_result && $faculty_result->num_rows > 0) {
+            $notifMessage = "📝 Revision requested for thesis: \"" . $thesis_title . "\". Coordinator: " . $coordinator_name . " Feedback: " . $revision_feedback . " Please revise and resubmit.";
             $insert_notif = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'revision_request', 0, NOW())";
             $insert_stmt = $conn->prepare($insert_notif);
-            $insert_stmt->bind_param("iis", $adviser_id, $thesis_id_post, $notifMessage);
-            $insert_stmt->execute();
+            
+            while ($faculty = $faculty_result->fetch_assoc()) {
+                $faculty_id = $faculty['user_id'];
+                $insert_stmt->bind_param("iis", $faculty_id, $thesis_id_post, $notifMessage);
+                $insert_stmt->execute();
+            }
             $insert_stmt->close();
         }
+        
+        // Notify student
+        $student_notif = "📝 Revision requested for your thesis \"" . $thesis_title . "\". Coordinator feedback: " . $revision_feedback;
+        $insert_student = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'student_notif', 0, NOW())";
+        $student_stmt = $conn->prepare($insert_student);
+        $student_stmt->bind_param("iis", $student_id, $thesis_id_post, $student_notif);
+        $student_stmt->execute();
+        $student_stmt->close();
         
         $conn->commit();
         
         $_SESSION['success_message'] = "✓ Revision requested! Faculty has been notified.";
-        header("Location: coordinatorDashboard.php?msg=revision");
+        header("Location: coordinatorDashboard.php");
         exit();
         
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['error_message'] = "Error: " . $e->getMessage();
-        header("Location: coordinatorDashboard.php?msg=error");
+        header("Location: coordinatorDashboard.php");
         exit();
     }
 }
@@ -195,7 +215,7 @@ if (isset($_SESSION['error_message'])) {
 }
 
 $current_status = strtolower(trim($thesis_status));
-$pageTitle = "Review Thesis";
+$pageTitle = $thesis_id > 0 ? "Review Thesis" : "Pending Theses";
 ?>
 
 <!DOCTYPE html>
@@ -307,11 +327,11 @@ $pageTitle = "Review Thesis";
             font-size: 0.75rem;
             transition: all 0.3s ease;
         }
-        .btn-approve {
+        .btn-forward {
             background: #28a745;
             color: white;
         }
-        .btn-approve:hover {
+        .btn-forward:hover {
             background: #1e7e34;
             transform: translateY(-1px);
         }
@@ -334,6 +354,57 @@ $pageTitle = "Review Thesis";
         .modal-content textarea { width: 100%; padding: 0.75rem; border: 1px solid #e0e0e0; border-radius: 6px; margin: 1rem 0; font-family: inherit; resize: vertical; }
         .modal-buttons { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1.5rem; }
         
+        /* Pending Theses List Styles */
+        .pending-list-container {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+        }
+        .pending-list-container h2 {
+            color: #732529;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .pending-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .pending-table th {
+            text-align: left;
+            padding: 12px;
+            background: #f8fafc;
+            color: #6E6E6E;
+            font-weight: 600;
+            font-size: 0.75rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .pending-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 0.85rem;
+        }
+        .pending-table tr:hover {
+            background: #fef2f2;
+        }
+        .btn-review-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            background: #dc2626;
+            color: white;
+            text-decoration: none;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            transition: all 0.3s;
+        }
+        .btn-review-link:hover {
+            background: #991b1b;
+            transform: scale(1.05);
+        }
+        
         @media (max-width: 768px) {
             .thesis-details { grid-template-columns: 1fr; }
             .action-buttons { flex-direction: column; }
@@ -342,6 +413,7 @@ $pageTitle = "Review Thesis";
             .main-content { padding: 1rem; margin-top: 60px; }
             .topbar { display: none; }
             .pdf-viewer iframe { height: 250px; }
+            .pending-table { display: block; overflow-x: auto; }
         }
         
         .theme-toggle { margin-bottom: 1rem; }
@@ -373,85 +445,127 @@ $pageTitle = "Review Thesis";
         <header class="topbar">
             <div style="display: flex; align-items: center; gap: 1rem;">
                 <div class="hamburger-menu" id="hamburgerBtn"><i class="fas fa-bars"></i></div>
-                <h1>Review Thesis</h1>
+                <h1><?= $thesis_id > 0 ? "Review Thesis" : "Pending Theses for Review" ?></h1>
             </div>
             <div class="user-info"><div class="avatar"><?= htmlspecialchars($initials) ?></div></div>
         </header>
 
         <a href="coordinatorDashboard.php" class="back-link"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
 
-        <div class="review-container">
-            <?php if (!empty($message)): ?>
-                <div class="message <?= $messageType ?>"><?= htmlspecialchars($message) ?></div>
-            <?php endif; ?>
-
-            <div class="thesis-header">
-                <h2><?= htmlspecialchars($thesis_title) ?></h2>
-                <?php 
-                $status_display = ucfirst(str_replace('_', ' ', $thesis_status));
-                $status_class = strtolower(str_replace(' ', '_', $thesis_status));
-                ?>
-                <span class="status-badge <?= htmlspecialchars($status_class) ?>"><?= htmlspecialchars($status_display) ?></span>
-            </div>
-
-            <div class="thesis-details">
-                <div class="detail-item"><span class="detail-label">Student Name: </span><span class="detail-value"><?= htmlspecialchars($student_name) ?></span></div>
-                <div class="detail-item"><span class="detail-label">Adviser: </span><span class="detail-value"><?= htmlspecialchars($thesis_author) ?></span></div>
-                <div class="detail-item"><span class="detail-label">Department: </span><span class="detail-value"><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></span></div>
-                <div class="detail-item"><span class="detail-label">Year: </span><span class="detail-value"><?= htmlspecialchars($thesis['year'] ?? 'N/A') ?></span></div>
-                <div class="detail-item"><span class="detail-label">Date Submitted: </span><span class="detail-value"><?= $thesis_date ?></span></div>
-            </div>
-
-            <div class="thesis-abstract"><h3>Abstract</h3><p><?= nl2br(htmlspecialchars($thesis_abstract)) ?></p></div>
-
-            <div class="thesis-file">
-                <h3><i class="fas fa-file-pdf"></i> Manuscript File</h3>
-                <?php if (!empty($thesis_file)): 
-                    $file_path = '../' . $thesis_file;
-                    if (file_exists($file_path)): ?>
-                        <div class="file-actions">
-                            <a href="<?= htmlspecialchars($file_path) ?>" class="file-link" target="_blank"><i class="fas fa-eye"></i> View PDF</a>
-                            <a href="<?= htmlspecialchars($file_path) ?>" class="file-link download" download><i class="fas fa-download"></i> Download</a>
-                        </div>
-                        <div class="pdf-viewer"><iframe src="<?= htmlspecialchars($file_path) ?>"></iframe></div>
-                    <?php else: ?>
-                        <p>File not found.</p>
-                    <?php endif; ?>
+        <?php if ($thesis_id == 0): ?>
+            <!-- LIST VIEW: Show all pending theses -->
+            <div class="pending-list-container">
+                <h2><i class="fas fa-clock"></i> Theses Waiting for Coordinator Review</h2>
+                <?php if (empty($pending_theses_list)): ?>
+                    <div class="empty-state" style="text-align: center; padding: 40px;">
+                        <i class="fas fa-check-circle" style="font-size: 3rem; color: #dc2626; margin-bottom: 12px;"></i>
+                        <p>No pending theses to review.</p>
+                    </div>
                 <?php else: ?>
-                    <p>No manuscript file uploaded.</p>
+                    <div class="table-responsive">
+                        <table class="pending-table">
+                            <thead>
+                                <tr>
+                                    <th>Thesis Title</th>
+                                    <th>Student</th>
+                                    <th>Department</th>
+                                    <th>Date Submitted</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($pending_theses_list as $thesis): ?>
+                                <tr>
+                                    <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
+                                    <td><?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?></td>
+                                    <td><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></td>
+                                    <td><?= date('M d, Y', strtotime($thesis['date_submitted'])) ?></td>
+                                    <td>
+                                        <a href="reviewThesis.php?id=<?= $thesis['thesis_id'] ?>" class="btn-review-link">
+                                            <i class="fas fa-chevron-right"></i> Review
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 <?php endif; ?>
             </div>
+        <?php else: ?>
+            <!-- DETAIL VIEW: Show single thesis for review -->
+            <div class="review-container">
+                <?php if (!empty($message)): ?>
+                    <div class="message <?= $messageType ?>"><?= htmlspecialchars($message) ?></div>
+                <?php endif; ?>
 
-            <?php if ($current_status == 'pending_coordinator'): ?>
-            <div class="action-buttons">
-                <button class="btn btn-approve" onclick="showForwardModal()">
-                    <i class="fas fa-check-circle"></i> FORWARD TO DEAN
-                </button>
-                <button class="btn btn-revise" onclick="showReviseModal()">
-                    <i class="fas fa-edit"></i> REQUEST REVISIONS
-                </button>
-            </div>
-            <?php elseif ($current_status == 'forwarded_to_dean'): ?>
-            <div class="action-buttons">
-                <div style="background:#d4edda; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-check-circle"></i> This thesis has been forwarded to the Dean for final approval.
+                <div class="thesis-header">
+                    <h2><?= htmlspecialchars($thesis_title) ?></h2>
+                    <?php 
+                    $status_display = ucfirst(str_replace('_', ' ', $thesis_status));
+                    $status_class = strtolower(str_replace(' ', '_', $thesis_status));
+                    ?>
+                    <span class="status-badge <?= htmlspecialchars($status_class) ?>"><?= htmlspecialchars($status_display) ?></span>
                 </div>
-            </div>
-            <?php elseif ($current_status == 'rejected'): ?>
-            <div class="action-buttons">
-                <div style="background:#f8d7da; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-times-circle"></i> This thesis has been rejected.
-                </div>
-            </div>
-            <?php else: ?>
-            <div class="action-buttons">
-                <div style="background:#fff3cd; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-info-circle"></i> This thesis is still pending faculty review.
-                </div>
-            </div>
-            <?php endif; ?>
 
-        </div>
+                <div class="thesis-details">
+                    <div class="detail-item"><span class="detail-label">Student Name: </span><span class="detail-value"><?= htmlspecialchars($student_name) ?></span></div>
+                    <div class="detail-item"><span class="detail-label">Adviser: </span><span class="detail-value"><?= htmlspecialchars($thesis_author) ?></span></div>
+                    <div class="detail-item"><span class="detail-label">Department: </span><span class="detail-value"><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></span></div>
+                    <div class="detail-item"><span class="detail-label">Year: </span><span class="detail-value"><?= htmlspecialchars($thesis['year'] ?? 'N/A') ?></span></div>
+                    <div class="detail-item"><span class="detail-label">Date Submitted: </span><span class="detail-value"><?= $thesis_date ?></span></div>
+                </div>
+
+                <div class="thesis-abstract"><h3>Abstract</h3><p><?= nl2br(htmlspecialchars($thesis_abstract)) ?></p></div>
+
+                <div class="thesis-file">
+                    <h3><i class="fas fa-file-pdf"></i> Manuscript File</h3>
+                    <?php if (!empty($thesis_file)): 
+                        $file_path = '../' . $thesis_file;
+                        if (file_exists($file_path)): ?>
+                            <div class="file-actions">
+                                <a href="<?= htmlspecialchars($file_path) ?>" class="file-link" target="_blank"><i class="fas fa-eye"></i> View PDF</a>
+                                <a href="<?= htmlspecialchars($file_path) ?>" class="file-link download" download><i class="fas fa-download"></i> Download</a>
+                            </div>
+                            <div class="pdf-viewer"><iframe src="<?= htmlspecialchars($file_path) ?>"></iframe></div>
+                        <?php else: ?>
+                            <p>File not found.</p>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <p>No manuscript file uploaded.</p>
+                    <?php endif; ?>
+                </div>
+
+                <?php if ($current_status == 'pending_coordinator'): ?>
+                <div class="action-buttons">
+                    <button class="btn btn-forward" onclick="showForwardModal()">
+                        <i class="fas fa-check-circle"></i> FORWARD TO DEAN
+                    </button>
+                    <button class="btn btn-revise" onclick="showReviseModal()">
+                        <i class="fas fa-edit"></i> REQUEST REVISIONS
+                    </button>
+                </div>
+                <?php elseif ($current_status == 'forwarded_to_dean'): ?>
+                <div class="action-buttons">
+                    <div style="background:#d4edda; padding:1rem; border-radius:8px; width:100%;">
+                        <i class="fas fa-check-circle"></i> This thesis has been forwarded to the Dean for final approval.
+                    </div>
+                </div>
+                <?php elseif ($current_status == 'rejected'): ?>
+                <div class="action-buttons">
+                    <div style="background:#f8d7da; padding:1rem; border-radius:8px; width:100%;">
+                        <i class="fas fa-times-circle"></i> This thesis has been rejected.
+                    </div>
+                </div>
+                <?php else: ?>
+                <div class="action-buttons">
+                    <div style="background:#fff3cd; padding:1rem; border-radius:8px; width:100%;">
+                        <i class="fas fa-info-circle"></i> This thesis is still pending faculty review.
+                    </div>
+                </div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
     </main>
 </div>
 
@@ -465,13 +579,13 @@ $pageTitle = "Review Thesis";
             <input type="hidden" name="forward_to_dean" value="1">
             <div class="modal-buttons">
                 <button type="button" class="btn" style="background:#6c757d; color:white;" onclick="closeForwardModal()">Cancel</button>
-                <button type="submit" class="btn btn-approve">Confirm Forward</button>
+                <button type="submit" class="btn btn-forward">Confirm Forward</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- Revise Modal -->
+<!-- Request Revisions Modal -->
 <div id="reviseModal" class="modal">
     <div class="modal-content">
         <h3 style="color:#dc3545;"><i class="fas fa-edit"></i> Request Revisions</h3>
@@ -479,7 +593,7 @@ $pageTitle = "Review Thesis";
         <form method="POST" action="">
             <div class="modal-body">
                 <input type="hidden" name="thesis_id" value="<?= $thesis_id ?>">
-                <input type="hidden" name="reject_thesis" value="1">
+                <input type="hidden" name="request_revision" value="1">
                 <div class="form-group">
                     <label>Feedback / Revision Instructions <span style="color:#dc3545;">*</span></label>
                     <textarea name="feedback" rows="5" placeholder="Please provide specific feedback and revision instructions for the faculty adviser..." required></textarea>

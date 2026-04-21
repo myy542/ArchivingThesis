@@ -26,17 +26,8 @@ $last_name = $user_data['last_name'] ?? '';
 $fullName = trim($first_name . " " . $last_name);
 $initials = !empty($first_name) && !empty($last_name) ? strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1)) : "U";
 
-// Get student_id from student_table
+// UPDATED: Dili na mogamit og student_table - ang user_id kay mao na ang student_id
 $student_id = $user_id;
-$student_query = "SELECT student_id FROM student_table WHERE user_id = ? LIMIT 1";
-$student_stmt = $conn->prepare($student_query);
-$student_stmt->bind_param("i", $user_id);
-$student_stmt->execute();
-$student_result = $student_stmt->get_result();
-if ($student_row = $student_result->fetch_assoc()) {
-    $student_id = $student_row['student_id'];
-}
-$student_stmt->close();
 
 // Get all projects/theses submitted by the student
 $projects_query = "SELECT t.*, 

@@ -17,12 +17,6 @@ $thesis_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // ==================== FUNCTION TO NOTIFY COORDINATOR ====================
 function notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $faculty_name) {
-    error_log("=== NOTIFY COORDINATOR START ===");
-    error_log("Thesis ID: " . $thesis_id);
-    error_log("Thesis Title: " . $thesis_title);
-    error_log("Student Name: " . $student_name);
-    error_log("Faculty Name: " . $faculty_name);
-    
     // Make sure notifications table exists
     $conn->query("CREATE TABLE IF NOT EXISTS notifications (
         notification_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -38,54 +32,33 @@ function notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $fac
     )");
     
     // Get all coordinators (role_id = 6)
-    $coord_query = "SELECT user_id, first_name, last_name FROM user_table WHERE role_id = 6";
+    $coord_query = "SELECT user_id FROM user_table WHERE role_id = 6";
     $coord_result = $conn->query($coord_query);
     
-    if (!$coord_result) {
-        error_log("Error fetching coordinators: " . $conn->error);
+    if (!$coord_result || $coord_result->num_rows == 0) {
+        error_log("No coordinator found");
         return false;
     }
     
-    if ($coord_result->num_rows == 0) {
-        error_log("No coordinator found with role_id = 6");
-        // Debug: Show all users and their role_id
-        $allUsers = $conn->query("SELECT user_id, first_name, last_name, role_id FROM user_table");
-        if ($allUsers) {
-            while ($user = $allUsers->fetch_assoc()) {
-                error_log("User: {$user['first_name']} {$user['last_name']}, role_id: {$user['role_id']}");
-            }
-        }
-        return false;
-    }
-    
-    error_log("Found " . $coord_result->num_rows . " coordinator(s)");
+    $message = "📢 New thesis forwarded for review: \"" . $thesis_title . "\" from student " . $student_name . ". Faculty: " . $faculty_name . " has approved this thesis.";
+    $link = "../coordinator/reviewThesis.php?id=" . $thesis_id;
+    $type = 'faculty_forward';
     
     $notified = false;
     while ($coordinator = $coord_result->fetch_assoc()) {
         $coordinator_id = $coordinator['user_id'];
-        $coordinator_name = $coordinator['first_name'] . ' ' . $coordinator['last_name'];
         
-        $message = "📢 New thesis forwarded for review: \"" . $thesis_title . "\" from student " . $student_name . ". Faculty: " . $faculty_name . " has approved this thesis.";
-        $link = "../coordinator/reviewThesis.php?id=" . $thesis_id;
+        $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
+                    VALUES (?, ?, ?, ?, ?, 0, NOW())";
+        $notifStmt = $conn->prepare($notifSql);
+        $notifStmt->bind_param("iisss", $coordinator_id, $thesis_id, $message, $type, $link);
         
-        error_log("Inserting notification for coordinator: $coordinator_name (ID: $coordinator_id)");
-        
-        // Use direct query to avoid prepare statement issues
-        $message_escaped = mysqli_real_escape_string($conn, $message);
-        $link_escaped = mysqli_real_escape_string($conn, $link);
-        
-        $insert_sql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
-                       VALUES ($coordinator_id, $thesis_id, '$message_escaped', 'faculty_forward', '$link_escaped', 0, NOW())";
-        
-        if ($conn->query($insert_sql)) {
+        if ($notifStmt->execute()) {
             $notified = true;
-            error_log("SUCCESS: Notification inserted for coordinator ID: $coordinator_id");
-        } else {
-            error_log("FAILED: Error inserting notification - " . $conn->error);
         }
+        $notifStmt->close();
     }
     
-    error_log("=== NOTIFY COORDINATOR END - Result: " . ($notified ? "SUCCESS" : "FAILED") . " ===");
     return $notified;
 }
 
@@ -124,7 +97,12 @@ $initials = $first && $last ? strtoupper(substr($first, 0, 1) . substr($last, 0,
 $thesis = null;
 
 try {
-    $query = "SELECT t.*, u.first_name, u.last_name, u.email, u.user_id 
+    $query = "SELECT 
+                t.*, 
+                u.user_id as student_user_id,
+                u.first_name as student_first_name, 
+                u.last_name as student_last_name, 
+                u.email as student_email
               FROM thesis_table t
               JOIN user_table u ON t.student_id = u.user_id
               WHERE t.thesis_id = ?";
@@ -155,14 +133,12 @@ if (isset($_POST['approve_thesis'])) {
     $conn->begin_transaction();
     
     try {
-        // Update thesis status to 'pending_coordinator'
         $updateQuery = "UPDATE thesis_table SET status = 'pending_coordinator' WHERE thesis_id = ?";
         $stmt = $conn->prepare($updateQuery);
         $stmt->bind_param("i", $thesis_id);
         $stmt->execute();
         $stmt->close();
         
-        // Save feedback if any
         if (!empty($feedback)) {
             $insertQuery = "INSERT INTO feedback_table (thesis_id, faculty_id, comments, feedback_date) 
                            VALUES (?, ?, ?, NOW())";
@@ -172,13 +148,11 @@ if (isset($_POST['approve_thesis'])) {
             $stmt->close();
         }
         
-        $student_name = $thesis['first_name'] . ' ' . $thesis['last_name'];
+        $student_name = $thesis['student_first_name'] . ' ' . $thesis['student_last_name'];
         $faculty_name = $first . ' ' . $last;
         $thesis_title = $thesis['title'];
         
-        // SEND NOTIFICATION TO COORDINATOR
-        $notifyResult = notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $faculty_name);
-        error_log("Notify Coordinator Result: " . ($notifyResult ? "SUCCESS" : "FAILED"));
+        notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $faculty_name);
         
         $conn->commit();
         
@@ -216,12 +190,13 @@ if (isset($_POST['reject_thesis'])) {
             $stmt->close();
         }
         
-        // Notify student
+        $student_id = $thesis['student_user_id'];
+        
         $notifMessage = "Your thesis '" . $thesis['title'] . "' has been rejected. Reason: " . $feedback;
         $notifQuery = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
                       VALUES (?, ?, ?, 'student_notif', NULL, 0, NOW())";
         $stmt2 = $conn->prepare($notifQuery);
-        $stmt2->bind_param("iis", $thesis['user_id'], $thesis_id, $notifMessage);
+        $stmt2->bind_param("iis", $student_id, $thesis_id, $notifMessage);
         $stmt2->execute();
         $stmt2->close();
         
@@ -239,7 +214,6 @@ if (isset($_POST['reject_thesis'])) {
     }
 }
 
-// Check for session messages
 if (isset($_SESSION['success_message'])) {
     $message = $_SESSION['success_message'];
     $messageType = "success";
@@ -475,8 +449,8 @@ $pageTitle = "Review Thesis";
             </div>
 
             <div class="thesis-details">
-                <div class="detail-item"><span class="detail-label">Student Name: </span><span class="detail-value"><?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?></span></div>
-                <div class="detail-item"><span class="detail-label">Email: </span><span class="detail-value"><?= htmlspecialchars($thesis['email']) ?></span></div>
+                <div class="detail-item"><span class="detail-label">Student Name: </span><span class="detail-value"><?= htmlspecialchars($thesis['student_first_name'] . ' ' . $thesis['student_last_name']) ?></span></div>
+                <div class="detail-item"><span class="detail-label">Email: </span><span class="detail-value"><?= htmlspecialchars($thesis['student_email']) ?></span></div>
                 <div class="detail-item"><span class="detail-label">Department: </span><span class="detail-value"><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></span></div>
                 <div class="detail-item"><span class="detail-label">Year: </span><span class="detail-value"><?= htmlspecialchars($thesis['year'] ?? 'N/A') ?></span></div>
                 <?php 
@@ -485,7 +459,7 @@ $pageTitle = "Review Thesis";
                 <div class="detail-item"><span class="detail-label">Date Submitted: </span><span class="detail-value"><?= date('F d, Y', strtotime($dateField)) ?></span></div>
             </div>
 
-            <div class="thesis-abstract"><h3>Abstract</h3><p><?= nl2br(htmlspecialchars($thesis['abstract'])) ?></p></div>
+            <div class="thesis-abstract"><h3>Abstract</h3><p><?= nl2br(htmlspecialchars($thesis['abstract'] ?? 'No abstract provided.')) ?></p></div>
 
             <div class="thesis-file">
                 <h3><i class="fas fa-file-pdf"></i> Manuscript File</h3>

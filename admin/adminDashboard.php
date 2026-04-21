@@ -75,6 +75,30 @@ function logAdminAction($conn, $user_id, $action, $table, $record_id, $descripti
 
 logAdminAction($conn, $user_id, "Admin accessed dashboard", "user_table", $user_id, "Admin $fullName accessed the admin dashboard");
 
+// ==================== NOTIFICATION HANDLERS ====================
+// MARK NOTIFICATION AS READ (via AJAX)
+if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
+    $notif_id = intval($_POST['notif_id']);
+    $update_query = "UPDATE notifications SET status = 1 WHERE notification_id = ? AND user_id = ?";
+    $update_stmt = $conn->prepare($update_query);
+    $update_stmt->bind_param("ii", $notif_id, $user_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// MARK ALL NOTIFICATIONS AS READ
+if (isset($_POST['mark_all_read'])) {
+    $update_query = "UPDATE notifications SET status = 1 WHERE user_id = ?";
+    $update_stmt = $conn->prepare($update_query);
+    $update_stmt->bind_param("i", $user_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    echo json_encode(['success' => true]);
+    exit;
+}
+
 // DASHBOARDS
 $dashboards = [
     1 => ['name' => 'Admin', 'icon' => 'fa-user-shield', 'color' => '#d32f2f', 'folder' => 'admin', 'file' => 'admindashboard.php', 'role_id' => 1],
@@ -133,7 +157,7 @@ if ($check_theses_table && $check_theses_table->num_rows > 0) {
     $theses_count = $conn->query("SELECT COUNT(*) as c FROM thesis_table")->fetch_assoc()['c'];
 }
 
-// ==================== NOTIFICATION SYSTEM - FIXED (using 'status' instead of 'is_read') ====================
+// ==================== NOTIFICATION SYSTEM ====================
 // Create notifications table if not exists
 $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     notification_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -161,6 +185,17 @@ if ($notif_check && $notif_check->num_rows > 0) {
     }
     $n->close();
 }
+
+// GET RECENT NOTIFICATIONS FOR DROPDOWN
+$recentNotifications = [];
+$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, type, link, status, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10");
+$notif_list->bind_param("i", $user_id);
+$notif_list->execute();
+$notif_result = $notif_list->get_result();
+while ($row = $notif_result->fetch_assoc()) {
+    $recentNotifications[] = $row;
+}
+$notif_list->close();
 
 $conn->close();
 ?>
@@ -277,6 +312,11 @@ $conn->close();
             gap: 20px;
         }
 
+        /* Notification Styles */
+        .notification-container {
+            position: relative;
+        }
+
         .notification-icon {
             position: relative;
             cursor: pointer;
@@ -312,6 +352,123 @@ $conn->close();
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 0 5px;
+        }
+
+        .notification-dropdown {
+            position: absolute;
+            top: 55px;
+            right: 0;
+            width: 380px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            display: none;
+            overflow: hidden;
+            z-index: 1000;
+            border: 1px solid #ffcdd2;
+            animation: fadeSlideDown 0.2s ease;
+        }
+
+        .notification-dropdown.show {
+            display: block;
+        }
+
+        @keyframes fadeSlideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .notification-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #fee2e2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .notification-header h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #991b1b;
+        }
+
+        .notification-header a {
+            font-size: 0.7rem;
+            color: #dc2626;
+            text-decoration: none;
+        }
+
+        .notification-list {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .notification-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #fef2f2;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .notification-item:hover {
+            background: #fef2f2;
+        }
+
+        .notification-item.unread {
+            background: #fff5f5;
+            border-left: 3px solid #dc2626;
+        }
+
+        .notification-item.empty {
+            justify-content: center;
+            color: #9ca3af;
+            cursor: default;
+        }
+
+        .notification-item.empty:hover {
+            background: transparent;
+        }
+
+        .notif-icon {
+            width: 36px;
+            height: 36px;
+            background: #fef2f2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #dc2626;
+        }
+
+        .notif-content {
+            flex: 1;
+        }
+
+        .notif-message {
+            font-size: 0.8rem;
+            color: #1f2937;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .notif-time {
+            font-size: 0.65rem;
+            color: #9ca3af;
+        }
+
+        .notification-footer {
+            padding: 10px 16px;
+            border-top: 1px solid #fee2e2;
+            text-align: center;
+        }
+
+        .notification-footer a {
+            font-size: 0.75rem;
+            color: #dc2626;
+            text-decoration: none;
         }
 
         .profile-wrapper {
@@ -467,7 +624,6 @@ $conn->close();
             color: white;
         }
 
-        /* Theses Link - same style as nav-item */
         .theses-link {
             display: flex;
             align-items: center;
@@ -946,6 +1102,11 @@ $conn->close();
             .chart-container {
                 height: 220px;
             }
+
+            .notification-dropdown {
+                width: 320px;
+                right: -10px;
+            }
         }
 
         @media (max-width: 480px) {
@@ -970,6 +1131,11 @@ $conn->close();
 
             .chart-container {
                 height: 200px;
+            }
+
+            .notification-dropdown {
+                width: 300px;
+                right: -5px;
             }
         }
 
@@ -1003,7 +1169,8 @@ $conn->close();
         body.dark-mode .stat-card,
         body.dark-mode .stat-card-small,
         body.dark-mode .chart-card,
-        body.dark-mode .info-card {
+        body.dark-mode .info-card,
+        body.dark-mode .notification-dropdown {
             background: #1e293b;
             border-color: #334155;
         }
@@ -1026,6 +1193,30 @@ $conn->close();
         body.dark-mode .profile-dropdown a:hover {
             background: #334155;
         }
+
+        body.dark-mode .notification-item {
+            border-bottom-color: #334155;
+        }
+
+        body.dark-mode .notification-item:hover {
+            background: #334155;
+        }
+
+        body.dark-mode .notification-item.unread {
+            background: #3a2a2a;
+        }
+
+        body.dark-mode .notification-header {
+            border-bottom-color: #334155;
+        }
+
+        body.dark-mode .notification-header h4 {
+            color: #fecaca;
+        }
+
+        body.dark-mode .notif-message {
+            color: #e5e7eb;
+        }
     </style>
 </head>
 <body>
@@ -1045,11 +1236,69 @@ $conn->close();
             </div>
         </div>
         <div class="nav-right">
-            <div class="notification-icon">
-                <i class="far fa-bell"></i>
-                <?php if ($notificationCount > 0): ?>
-                    <span class="notification-badge"><?= $notificationCount ?></span>
-                <?php endif; ?>
+            <div class="notification-container">
+                <div class="notification-icon" id="notificationIcon">
+                    <i class="far fa-bell"></i>
+                    <?php if ($notificationCount > 0): ?>
+                        <span class="notification-badge" id="notificationBadge"><?= $notificationCount ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="notification-dropdown" id="notificationDropdown">
+                    <div class="notification-header">
+                        <h4>Notifications</h4>
+                        <?php if ($notificationCount > 0): ?>
+                            <a href="#" id="markAllReadBtn">Mark all as read</a>
+                        <?php endif; ?>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <?php if (empty($recentNotifications)): ?>
+                            <div class="notification-item empty">
+                                <div class="notif-icon"><i class="far fa-bell-slash"></i></div>
+                                <div class="notif-content">
+                                    <div class="notif-message">No notifications yet</div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($recentNotifications as $notif): ?>
+                                <div class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>" data-link="<?= htmlspecialchars($notif['link'] ?? '#') ?>">
+                                    <div class="notif-icon">
+                                        <?php if(strpos($notif['message'], 'registration') !== false): ?>
+                                            <i class="fas fa-user-plus"></i>
+                                        <?php elseif(strpos($notif['message'], 'thesis') !== false): ?>
+                                            <i class="fas fa-file-alt"></i>
+                                        elseif(strpos($notif['message'], 'approved') !== false):
+                                            echo '<i class="fas fa-check-circle"></i>';
+                                        elseif(strpos($notif['message'], 'rejected') !== false):
+                                            echo '<i class="fas fa-times-circle"></i>';
+                                        else: ?>
+                                            <i class="fas fa-bell"></i>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="notif-content">
+                                        <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>
+                                        <div class="notif-time">
+                                            <i class="far fa-clock"></i> 
+                                            <?php 
+                                            $date = new DateTime($notif['created_at']);
+                                            $now = new DateTime();
+                                            $diff = $now->diff($date);
+                                            if($diff->days == 0) 
+                                                echo 'Today, ' . $date->format('h:i A');
+                                            elseif($diff->days == 1) 
+                                                echo 'Yesterday, ' . $date->format('h:i A');
+                                            else 
+                                                echo $date->format('M d, Y h:i A');
+                                            ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                    <div class="notification-footer">
+                        <a href="notifications.php">View all notifications <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                </div>
             </div>
             <div class="profile-wrapper" id="profileWrapper">
                 <div class="profile-trigger">
@@ -1247,6 +1496,11 @@ $conn->close();
             const profileWrapper = document.getElementById('profileWrapper');
             const profileDropdown = document.getElementById('profileDropdown');
             const darkModeToggle = document.getElementById('darkmode');
+            const notificationIcon = document.getElementById('notificationIcon');
+            const notificationDropdown = document.getElementById('notificationDropdown');
+            const notificationBadge = document.getElementById('notificationBadge');
+            const notificationList = document.getElementById('notificationList');
+            const markAllReadBtn = document.getElementById('markAllReadBtn');
 
             // ==================== SIDEBAR FUNCTIONS ====================
             function openSidebar() {
@@ -1288,6 +1542,7 @@ $conn->close();
                 if (e.key === 'Escape') {
                     if (sidebar.classList.contains('open')) closeSidebar();
                     if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+                    if (notificationDropdown && notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show');
                 }
             });
 
@@ -1309,6 +1564,102 @@ $conn->close();
                         profileDropdown.classList.remove('show');
                     }
                 });
+            }
+
+            // ==================== NOTIFICATION FUNCTIONS ====================
+            if (notificationIcon) {
+                notificationIcon.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    notificationDropdown.classList.toggle('show');
+                    if (profileDropdown.classList.contains('show')) {
+                        profileDropdown.classList.remove('show');
+                    }
+                });
+            }
+
+            document.addEventListener('click', function(e) {
+                if (notificationIcon && !notificationIcon.contains(e.target) && notificationDropdown) {
+                    notificationDropdown.classList.remove('show');
+                }
+            });
+
+            function markNotificationAsRead(notifId, element) {
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'mark_read=1&notif_id=' + notifId
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        element.classList.remove('unread');
+                        if (notificationBadge) {
+                            let c = parseInt(notificationBadge.textContent);
+                            if (c > 0) {
+                                c--;
+                                if (c === 0) {
+                                    notificationBadge.style.display = 'none';
+                                } else {
+                                    notificationBadge.textContent = c;
+                                }
+                            }
+                        }
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
+
+            function markAllAsRead() {
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'mark_all_read=1'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.querySelectorAll('.notification-item.unread').forEach(item => {
+                            item.classList.remove('unread');
+                        });
+                        if (notificationBadge) {
+                            notificationBadge.style.display = 'none';
+                        }
+                        if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+            }
+
+            if (notificationList) {
+                notificationList.addEventListener('click', function(e) {
+                    const notificationItem = e.target.closest('.notification-item');
+                    if (notificationItem && !notificationItem.classList.contains('empty')) {
+                        const notifId = notificationItem.dataset.id;
+                        const link = notificationItem.dataset.link;
+                        if (notifId && notificationItem.classList.contains('unread')) {
+                            markNotificationAsRead(notifId, notificationItem);
+                        }
+                        if (link && link !== '#') {
+                            setTimeout(() => {
+                                window.location.href = link;
+                            }, 300);
+                        }
+                    }
+                });
+            }
+
+            if (markAllReadBtn) {
+                markAllReadBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    markAllAsRead();
+                });
+            }
+
+            if (notificationBadge && notificationBadge.textContent === '') {
+                notificationBadge.style.display = 'none';
+            } else if (notificationBadge) {
+                notificationBadge.style.display = 'flex';
             }
 
             // ==================== DARK MODE ====================
@@ -1336,10 +1687,7 @@ $conn->close();
                 // User Distribution Chart - Balanced Doughnut
                 const distCtx = document.getElementById('userDistributionChart');
                 if (distCtx && window.userData) {
-                    // Destroy existing chart if any
-                    if (window.distChartInstance) {
-                        window.distChartInstance.destroy();
-                    }
+                    if (window.distChartInstance) window.distChartInstance.destroy();
                     
                     window.distChartInstance = new Chart(distCtx, {
                         type: 'doughnut',
@@ -1391,26 +1739,17 @@ $conn->close();
                                 }
                             },
                             layout: {
-                                padding: {
-                                    top: 10,
-                                    bottom: 10,
-                                    left: 10,
-                                    right: 10
-                                }
+                                padding: { top: 10, bottom: 10, left: 10, right: 10 }
                             }
                         }
                     });
                 }
 
-                // Registration Trend Chart - Balanced Line Chart
+                // Registration Trend Chart
                 const regCtx = document.getElementById('registrationChart');
                 if (regCtx && window.userData) {
-                    // Destroy existing chart if any
-                    if (window.regChartInstance) {
-                        window.regChartInstance.destroy();
-                    }
+                    if (window.regChartInstance) window.regChartInstance.destroy();
                     
-                    // Find max value for y-axis
                     const maxValue = Math.max(...window.userData.monthlyData, 1);
                     const yAxisMax = Math.ceil(maxValue * 1.2);
                     
@@ -1467,10 +1806,7 @@ $conn->close();
                                         stepSize: 1, 
                                         precision: 0,
                                         color: '#6b7280',
-                                        font: {
-                                            size: 11,
-                                            weight: '500'
-                                        }
+                                        font: { size: 11, weight: '500' }
                                     },
                                     title: { 
                                         display: true, 
@@ -1484,10 +1820,7 @@ $conn->close();
                                     grid: { display: false },
                                     ticks: { 
                                         color: '#6b7280',
-                                        font: {
-                                            size: 11,
-                                            weight: '500'
-                                        },
+                                        font: { size: 11, weight: '500' },
                                         maxRotation: 45,
                                         minRotation: 45
                                     },
@@ -1501,22 +1834,11 @@ $conn->close();
                                 }
                             },
                             elements: {
-                                line: {
-                                    borderJoin: 'round',
-                                    borderCap: 'round'
-                                },
-                                point: {
-                                    hitRadius: 10,
-                                    hoverRadius: 8
-                                }
+                                line: { borderJoin: 'round', borderCap: 'round' },
+                                point: { hitRadius: 10, hoverRadius: 8 }
                             },
                             layout: {
-                                padding: {
-                                    top: 15,
-                                    bottom: 15,
-                                    left: 10,
-                                    right: 10
-                                }
+                                padding: { top: 15, bottom: 15, left: 10, right: 10 }
                             }
                         }
                     });
@@ -1527,7 +1849,7 @@ $conn->close();
             initDarkMode();
             initCharts();
 
-            console.log('Admin Dashboard Initialized - Menu Bar Style Sidebar with Balanced Charts');
+            console.log('Admin Dashboard Initialized - Menu Bar Style Sidebar with Notifications');
         });
     </script>
 </body>

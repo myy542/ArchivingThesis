@@ -60,7 +60,7 @@ function logAdminAction($conn, $user_id, $action, $table, $record_id, $descripti
     $log_stmt->close();
 }
 
-// CREATE THESES TABLE IF NOT EXISTS (with department)
+// CREATE THESES TABLE IF NOT EXISTS
 $create_theses_table = "CREATE TABLE IF NOT EXISTS theses (
     thesis_id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
@@ -82,16 +82,13 @@ if (!$check_department || $check_department->num_rows == 0) {
     $conn->query("ALTER TABLE theses ADD COLUMN department VARCHAR(100) AFTER author");
 }
 
-// Department list
+// ==================== UPDATED DEPARTMENT LIST ====================
 $departments = [
-    'College of Computer Studies',
-    'College of Engineering',
-    'College of Business Administration',
-    'College of Education',
-    'College of Arts and Sciences',
-    'College of Nursing',
-    'College of Criminal Justice',
-    'Graduate School'
+    'BSIT',
+    'BSBA',
+    'BSCRIM',
+    'BSED',
+    'BSHTM'
 ];
 
 // ==================== PROCESS FORM SUBMISSIONS ====================
@@ -274,14 +271,17 @@ foreach ($departments as $dept) {
     $dept_stats[$dept] = $result->fetch_assoc()['c'];
 }
 
-// GET NOTIFICATION COUNT
+// GET NOTIFICATION COUNT - using 'status' instead of 'is_read'
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows) {
-    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0");
+    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND status = 0");
     $n->bind_param("i", $user_id);
     $n->execute();
-    $notificationCount = $n->get_result()->fetch_assoc()['c'];
+    $result = $n->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $notificationCount = $row['c'];
+    }
     $n->close();
 }
 ?>
@@ -307,7 +307,7 @@ if ($notif_check && $notif_check->num_rows) {
             overflow-x: hidden;
         }
 
-        /* Top Navigation - full width */
+        /* Top Navigation */
         .top-nav {
             position: fixed;
             top: 0;
@@ -319,7 +319,7 @@ if ($notif_check && $notif_check->num_rows) {
             align-items: center;
             justify-content: space-between;
             padding: 0 32px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
             z-index: 99;
             border-bottom: 1px solid #ffcdd2;
         }
@@ -330,7 +330,6 @@ if ($notif_check && $notif_check->num_rows) {
             gap: 24px;
         }
 
-        /* Hamburger - ALWAYS VISIBLE */
         .hamburger {
             display: flex;
             flex-direction: column;
@@ -476,7 +475,7 @@ if ($notif_check && $notif_check->num_rows) {
             right: 0;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             min-width: 200px;
             display: none;
             overflow: hidden;
@@ -510,7 +509,7 @@ if ($notif_check && $notif_check->num_rows) {
             border-color: #ffcdd2;
         }
 
-        /* Sidebar - COLLAPSIBLE MENU BAR (hidden by default) */
+        /* Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -522,7 +521,7 @@ if ($notif_check && $notif_check->num_rows) {
             flex-direction: column;
             z-index: 1000;
             transition: left 0.3s ease;
-            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
         .sidebar.open {
@@ -531,7 +530,7 @@ if ($notif_check && $notif_check->num_rows) {
 
         .logo-container {
             padding: 28px 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
             text-align: center;
         }
 
@@ -577,13 +576,13 @@ if ($notif_check && $notif_check->num_rows) {
         }
 
         .nav-item:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255,255,255,0.2);
             color: white;
             transform: translateX(5px);
         }
 
         .nav-item.active {
-            background: rgba(255, 255, 255, 0.25);
+            background: rgba(255,255,255,0.25);
             color: white;
         }
 
@@ -605,20 +604,20 @@ if ($notif_check && $notif_check->num_rows) {
         }
 
         .theses-link:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255,255,255,0.2);
             color: white;
             transform: translateX(5px);
         }
 
         .theses-link.active {
-            background: rgba(255, 255, 255, 0.25);
+            background: rgba(255,255,255,0.25);
             color: white;
         }
 
         .dashboard-links {
             padding: 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.15);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            border-top: 1px solid rgba(255,255,255,0.15);
+            border-bottom: 1px solid rgba(255,255,255,0.15);
             margin: 5px 0;
         }
 
@@ -647,7 +646,7 @@ if ($notif_check && $notif_check->num_rows) {
         }
 
         .dashboard-link:hover {
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(255,255,255,0.15);
             transform: translateX(5px);
         }
 
@@ -659,7 +658,7 @@ if ($notif_check && $notif_check->num_rows) {
 
         .nav-footer {
             padding: 20px 16px;
-            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            border-top: 1px solid rgba(255,255,255,0.15);
         }
 
         .theme-toggle {
@@ -678,7 +677,7 @@ if ($notif_check && $notif_check->num_rows) {
             position: relative;
             width: 55px;
             height: 28px;
-            background: rgba(255, 255, 255, 0.25);
+            background: rgba(255,255,255,0.25);
             border-radius: 30px;
         }
 
@@ -727,11 +726,10 @@ if ($notif_check && $notif_check->num_rows) {
         }
 
         .logout-btn:hover {
-            background: rgba(255, 255, 255, 0.15);
+            background: rgba(255,255,255,0.15);
             color: white;
         }
 
-        /* Main Content - full width */
         .main-content {
             margin-left: 0;
             margin-top: 70px;
@@ -739,14 +737,13 @@ if ($notif_check && $notif_check->num_rows) {
             transition: margin-left 0.3s;
         }
 
-        /* Sidebar Overlay */
         .sidebar-overlay {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0,0,0,0.5);
             z-index: 999;
             display: none;
         }
@@ -755,7 +752,6 @@ if ($notif_check && $notif_check->num_rows) {
             display: block;
         }
 
-        /* Page Header */
         .page-header {
             margin-bottom: 30px;
         }
@@ -774,7 +770,6 @@ if ($notif_check && $notif_check->num_rows) {
             margin-top: 5px;
         }
 
-        /* Stats Cards */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -795,7 +790,7 @@ if ($notif_check && $notif_check->num_rows) {
 
         .stat-card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(211, 47, 47, 0.1);
+            box-shadow: 0 10px 25px rgba(211,47,47,0.1);
         }
 
         .stat-icon {
@@ -822,10 +817,9 @@ if ($notif_check && $notif_check->num_rows) {
             color: #6b7280;
         }
 
-        /* Department Stats */
         .dept-stats-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 15px;
             margin-bottom: 30px;
         }
@@ -841,7 +835,7 @@ if ($notif_check && $notif_check->num_rows) {
 
         .dept-stat-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(211, 47, 47, 0.1);
+            box-shadow: 0 5px 15px rgba(211,47,47,0.1);
         }
 
         .dept-stat-card h4 {
@@ -856,7 +850,6 @@ if ($notif_check && $notif_check->num_rows) {
             color: #d32f2f;
         }
 
-        /* Filter Bar */
         .filter-bar {
             background: white;
             border-radius: 20px;
@@ -939,7 +932,6 @@ if ($notif_check && $notif_check->num_rows) {
             transform: translateY(-2px);
         }
 
-        /* Theses Section */
         .theses-section {
             background: white;
             border-radius: 20px;
@@ -1052,7 +1044,6 @@ if ($notif_check && $notif_check->num_rows) {
             transform: scale(1.05);
         }
 
-        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -1060,7 +1051,7 @@ if ($notif_check && $notif_check->num_rows) {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0,0,0,0.5);
             z-index: 1100;
             align-items: center;
             justify-content: center;
@@ -1189,7 +1180,6 @@ if ($notif_check && $notif_check->num_rows) {
             color: #d32f2f;
         }
 
-        /* Alert Message */
         .alert {
             padding: 12px 20px;
             border-radius: 10px;
@@ -1216,28 +1206,15 @@ if ($notif_check && $notif_check->num_rows) {
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Dark Mode */
         body.dark-mode {
             background: #0f172a;
         }
@@ -1354,7 +1331,6 @@ if ($notif_check && $notif_check->num_rows) {
             background: #475569;
         }
 
-        /* Responsive */
         @media (max-width: 1024px) {
             .stats-grid, .dept-stats-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -1553,7 +1529,7 @@ if ($notif_check && $notif_check->num_rows) {
             </div>
         </div>
         
-        <!-- Department Statistics -->
+        <!-- Department Statistics - UPDATED -->
         <div class="dept-stats-grid">
             <?php foreach ($departments as $dept): ?>
             <div class="dept-stat-card">
@@ -1586,7 +1562,7 @@ if ($notif_check && $notif_check->num_rows) {
             <div class="table-responsive">
                 <table class="theses-table">
                     <thead>
-                        60
+                        <tr>
                             <th>ID</th>
                             <th>Title</th>
                             <th>Author</th>
@@ -1740,7 +1716,7 @@ if ($notif_check && $notif_check->num_rows) {
         const thesisForm = document.getElementById('thesisForm');
         const formAction = document.getElementById('form_action');
 
-        // ==================== SIDEBAR FUNCTIONS ====================
+        // Sidebar Functions
         function openSidebar() {
             sidebar.classList.add('open');
             sidebarOverlay.classList.add('show');
@@ -1778,7 +1754,7 @@ if ($notif_check && $notif_check->num_rows) {
             if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
         });
 
-        // ==================== PROFILE DROPDOWN ====================
+        // Profile Dropdown
         if (profileWrapper && profileDropdown) {
             profileWrapper.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -1791,7 +1767,7 @@ if ($notif_check && $notif_check->num_rows) {
             });
         }
 
-        // ==================== DARK MODE ====================
+        // Dark Mode
         function initDarkMode() {
             const isDark = localStorage.getItem('darkMode') === 'true';
             if (isDark) {
@@ -1811,7 +1787,7 @@ if ($notif_check && $notif_check->num_rows) {
             }
         }
 
-        // ==================== FILTER FUNCTIONS ====================
+        // Filter Functions
         function applyFilter() {
             const search = searchInput ? searchInput.value.trim() : '';
             const department = departmentFilter ? departmentFilter.value : '';
@@ -1846,7 +1822,7 @@ if ($notif_check && $notif_check->num_rows) {
             });
         }
 
-        // ==================== MODAL FUNCTIONS ====================
+        // Modal Functions
         function openModal() {
             thesisModal.classList.add('show');
         }
@@ -1921,7 +1897,7 @@ if ($notif_check && $notif_check->num_rows) {
         });
 
         initDarkMode();
-        console.log('Theses Management Page Initialized - Menu Bar Style Sidebar with Departments');
+        console.log('Theses Management Page Initialized - Departments: BSIT, BSBA, BSCRIM, BSED, BSHTM');
     </script>
 </body>
 </html>

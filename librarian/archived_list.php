@@ -32,11 +32,11 @@ if ($user_data) {
     $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 }
 
-// GET NOTIFICATION COUNT
+// GET NOTIFICATION COUNT - FIXED: 'status' to 'is_read'
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows) {
-    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND status = 0");
+    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0");
     $n->bind_param("i", $user_id);
     $n->execute();
     $result = $n->get_result();
@@ -46,9 +46,9 @@ if ($notif_check && $notif_check->num_rows) {
     $n->close();
 }
 
-// GET RECENT NOTIFICATIONS
+// GET RECENT NOTIFICATIONS - FIXED: 'status' to 'is_read'
 $recentNotifications = [];
-$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, status, created_at, link FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
+$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, is_read, created_at, link FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
 $notif_list->bind_param("i", $user_id);
 $notif_list->execute();
 $notif_result = $notif_list->get_result();
@@ -65,10 +65,10 @@ while ($row = $notif_result->fetch_assoc()) {
 }
 $notif_list->close();
 
-// MARK NOTIFICATION AS READ
+// MARK NOTIFICATION AS READ - FIXED: 'status' to 'is_read'
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
-    $update = $conn->prepare("UPDATE notifications SET status = 1 WHERE notification_id = ? AND user_id = ?");
+    $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?");
     $update->bind_param("ii", $notif_id, $user_id);
     $update->execute();
     $update->close();
@@ -76,9 +76,9 @@ if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     exit;
 }
 
-// MARK ALL AS READ
+// MARK ALL AS READ - FIXED: 'status' to 'is_read'
 if (isset($_POST['mark_all_read'])) {
-    $update = $conn->prepare("UPDATE notifications SET status = 1 WHERE user_id = ?");
+    $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?");
     $update->bind_param("i", $user_id);
     $update->execute();
     $update->close();
@@ -260,7 +260,7 @@ $pageTitle = "Archived Theses List";
                             <div class="notification-item empty"><div class="notif-icon"><i class="far fa-bell-slash"></i></div><div class="notif-content"><div class="notif-message">No notifications yet</div></div></div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <a href="<?= $notif['link'] ?? 'librarian_dashboard.php' ?>" class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
+                                <a href="<?= $notif['link'] ?? 'librarian_dashboard.php' ?>" class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
                                     <div class="notif-icon"><i class="fas fa-bell"></i></div>
                                     <div class="notif-content">
                                         <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>

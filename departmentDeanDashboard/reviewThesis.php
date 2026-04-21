@@ -83,7 +83,8 @@ function notifyLibrarian($conn, $thesis_id, $thesis_title, $student_name, $dean_
         $message = "📚 Thesis approved by Dean for archiving: \"" . $thesis_title . "\" from student " . $student_name . ". Approved by Dean: " . $dean_name;
         $link = "../librarian/archiveThesis.php?id=" . $thesis_id;
         
-        $insert_sql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
+        // FIXED: Changed 'status' to 'is_read'
+        $insert_sql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
                        VALUES ($librarian_id, $thesis_id, '$message', 'dean_approved', '$link', 0, NOW())";
         
         if ($conn->query($insert_sql)) {
@@ -106,17 +107,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['approve_thesis'])) {
     $update_stmt->execute();
     $update_stmt->close();
     
-    // 1. NOTIFY STUDENT
+    // 1. NOTIFY STUDENT - FIXED: changed 'status' to 'is_read'
     if ($student_id > 0) {
         $student_msg = "✅ Good news! Your thesis \"" . $thesis_title . "\" has been APPROVED by Dean " . $fullName;
         if (!empty($dean_feedback)) {
             $student_msg .= " Feedback: " . $dean_feedback;
         }
-        $notif_student = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($student_id, $thesis_id_post, '$student_msg', 'student_approved', 0, NOW())";
+        $notif_student = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($student_id, $thesis_id_post, '$student_msg', 'student_approved', 0, NOW())";
         $conn->query($notif_student);
     }
     
-    // 2. NOTIFY ADVISER
+    // 2. NOTIFY ADVISER - FIXED: changed 'status' to 'is_read'
     if (!empty($adviser_name)) {
         $get_adviser = "SELECT user_id FROM user_table WHERE CONCAT(first_name, ' ', last_name) = ? AND role_id = 3";
         $adviser_stmt = $conn->prepare($get_adviser);
@@ -129,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['approve_thesis'])) {
             if (!empty($dean_feedback)) {
                 $adviser_msg .= " Feedback: " . $dean_feedback;
             }
-            $notif_adviser = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($adviser_id, $thesis_id_post, '$adviser_msg', 'dean_approved', 0, NOW())";
+            $notif_adviser = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($adviser_id, $thesis_id_post, '$adviser_msg', 'dean_approved', 0, NOW())";
             $conn->query($notif_adviser);
         }
         $adviser_stmt->close();
@@ -139,9 +140,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['approve_thesis'])) {
     $student_name = $thesis['student_name'] ?? $thesis_author;
     notifyLibrarian($conn, $thesis_id_post, $thesis_title, $student_name, $fullName);
     
-    // 4. NOTIFY DEAN (history)
+    // 4. NOTIFY DEAN (history) - FIXED: changed 'status' to 'is_read'
     $dean_msg = "✅ You approved thesis \"" . $thesis_title . "\" and forwarded to Librarian";
-    $notif_dean = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($user_id, $thesis_id_post, '$dean_msg', 'dean_action', 0, NOW())";
+    $notif_dean = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($user_id, $thesis_id_post, '$dean_msg', 'dean_action', 0, NOW())";
     $conn->query($notif_dean);
     
     header("Location: dean.php?section=dashboard&msg=approved");
@@ -160,17 +161,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_thesis'])) {
     $update_stmt->execute();
     $update_stmt->close();
     
-    // 1. NOTIFY STUDENT
+    // 1. NOTIFY STUDENT - FIXED: changed 'status' to 'is_read'
     if ($student_id > 0) {
         $student_msg = "❌ Your thesis \"" . $thesis_title . "\" has been REJECTED by Dean " . $fullName;
         if (!empty($dean_feedback)) {
             $student_msg .= " Reason: " . $dean_feedback;
         }
-        $notif_student = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($student_id, $thesis_id_post, '$student_msg', 'student_rejected', 0, NOW())";
+        $notif_student = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($student_id, $thesis_id_post, '$student_msg', 'student_rejected', 0, NOW())";
         $conn->query($notif_student);
     }
     
-    // 2. NOTIFY ADVISER
+    // 2. NOTIFY ADVISER - FIXED: changed 'status' to 'is_read'
     if (!empty($adviser_name)) {
         $get_adviser = "SELECT user_id FROM user_table WHERE CONCAT(first_name, ' ', last_name) = ? AND role_id = 3";
         $adviser_stmt = $conn->prepare($get_adviser);
@@ -183,15 +184,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reject_thesis'])) {
             if (!empty($dean_feedback)) {
                 $adviser_msg .= " Reason: " . $dean_feedback;
             }
-            $notif_adviser = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($adviser_id, $thesis_id_post, '$adviser_msg', 'dean_rejected', 0, NOW())";
+            $notif_adviser = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($adviser_id, $thesis_id_post, '$adviser_msg', 'dean_rejected', 0, NOW())";
             $conn->query($notif_adviser);
         }
         $adviser_stmt->close();
     }
     
-    // 3. NOTIFY DEAN (history)
+    // 3. NOTIFY DEAN (history) - FIXED: changed 'status' to 'is_read'
     $dean_msg = "❌ You rejected thesis \"" . $thesis_title . "\"";
-    $notif_dean = "INSERT INTO notifications (user_id, thesis_id, message, type, status, created_at) VALUES ($user_id, $thesis_id_post, '$dean_msg', 'dean_action', 0, NOW())";
+    $notif_dean = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES ($user_id, $thesis_id_post, '$dean_msg', 'dean_action', 0, NOW())";
     $conn->query($notif_dean);
     
     header("Location: dean.php?section=dashboard&msg=rejected");

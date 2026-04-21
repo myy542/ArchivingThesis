@@ -13,46 +13,8 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role
 
 $user_id = $_SESSION['user_id'];
 
-// ========== DEBUGGING - CHECK NOTIFICATIONS ==========
-error_log("=== COORDINATOR DEBUG START ===");
-error_log("User ID from session: " . $user_id);
-
-// Check if user exists and get role_id
-$userCheck = $conn->query("SELECT user_id, first_name, last_name, role_id FROM user_table WHERE user_id = $user_id");
-if ($userCheck && $userCheck->num_rows > 0) {
-    $userRow = $userCheck->fetch_assoc();
-    error_log("User found: {$userRow['first_name']} {$userRow['last_name']}, role_id: {$userRow['role_id']}");
-} else {
-    error_log("USER NOT FOUND in user_table!");
-}
-
-// Check all notifications in database
-$allNotif = $conn->query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 10");
-if ($allNotif && $allNotif->num_rows > 0) {
-    error_log("=== ALL NOTIFICATIONS IN DATABASE (last 10) ===");
-    while ($row = $allNotif->fetch_assoc()) {
-        error_log("ID: {$row['notification_id']}, User: {$row['user_id']}, Status: {$row['status']}, Type: {$row['type']}, Message: " . substr($row['message'], 0, 50));
-    }
-} else {
-    error_log("NO NOTIFICATIONS FOUND IN DATABASE!");
-}
-
-// Check unread notifications for this coordinator
-$unreadQuery = "SELECT COUNT(*) as cnt FROM notifications WHERE user_id = $user_id AND status = 0";
-$unreadResult = $conn->query($unreadQuery);
-$unreadCount = 0;
-if ($unreadResult) {
-    $unreadRow = $unreadResult->fetch_assoc();
-    $unreadCount = $unreadRow['cnt'];
-    error_log("Unread notifications for user_id $user_id: " . $unreadCount);
-} else {
-    error_log("Error checking unread: " . $conn->error);
-}
-error_log("=== COORDINATOR DEBUG END ===");
-// ========== END DEBUGGING ==========
-
 // GET USER DATA FROM DATABASE
-$user_query = "SELECT user_id, username, email, first_name, last_name, role_id, status FROM user_table WHERE user_id = ?";
+$user_query = "SELECT user_id, username, email, first_name, last_name, role_id FROM user_table WHERE user_id = ?";
 $user_stmt = $conn->prepare($user_query);
 $user_stmt->bind_param("i", $user_id);
 $user_stmt->execute();
@@ -70,10 +32,6 @@ if ($user_data) {
     $username = $user_data['username'] ?? '';
     $user_email = $user_data['email'] ?? '';
 }
-
-// Fallback sa session
-if (empty($first_name)) $first_name = $_SESSION['first_name'] ?? '';
-if (empty($last_name)) $last_name = $_SESSION['last_name'] ?? '';
 
 $fullName = trim($first_name . " " . $last_name);
 if (empty($fullName)) $fullName = !empty($username) ? $username : "Coordinator";
@@ -94,7 +52,6 @@ if ($check_thesis && $check_thesis->num_rows > 0) {
 }
 
 // ==================== NOTIFICATION SYSTEM ====================
-// Create notifications table with correct structure (status instead of is_read)
 $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     notification_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -102,18 +59,27 @@ $conn->query("CREATE TABLE IF NOT EXISTS notifications (
     message TEXT NOT NULL,
     type VARCHAR(50) DEFAULT 'info',
     link VARCHAR(255) NULL,
-    status TINYINT DEFAULT 0,
+    is_read TINYINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX (user_id),
-    INDEX (status)
+    INDEX (is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-// GET NOTIFICATION COUNT - using 'status' instead of 'is_read'
-$notificationCount = $unreadCount; // Use the debug count
+// GET NOTIFICATION COUNT
+$notificationCount = 0;
+$notif_query = "SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0";
+$notif_stmt = $conn->prepare($notif_query);
+$notif_stmt->bind_param("i", $user_id);
+$notif_stmt->execute();
+$notif_result = $notif_stmt->get_result();
+if ($notif_row = $notif_result->fetch_assoc()) {
+    $notificationCount = $notif_row['cnt'];
+}
+$notif_stmt->close();
 
-// GET RECENT NOTIFICATIONS - using 'status' instead of 'is_read'
+// GET RECENT NOTIFICATIONS
 $recentNotifications = [];
-$notif_list_query = "SELECT notification_id, user_id, thesis_id, message, type, link, status, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10";
+$notif_list_query = "SELECT notification_id, user_id, thesis_id, message, type, link, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10";
 $notif_list_stmt = $conn->prepare($notif_list_query);
 $notif_list_stmt->bind_param("i", $user_id);
 $notif_list_stmt->execute();
@@ -131,8 +97,8 @@ function notifyDean($conn, $thesis_id, $thesis_title, $student_name, $coordinato
     if ($dean_result && $dean_result->num_rows > 0) {
         while ($dean = $dean_result->fetch_assoc()) {
             $message = "📋 Thesis ready for Dean approval: \"" . $thesis_title . "\" from student " . $student_name . ". Forwarded by Coordinator: " . $coordinator_name;
-            $link = "../dean/reviewThesis.php?id=" . $thesis_id;
-            $insert = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) VALUES (?, ?, ?, 'dean_forward', ?, 0, NOW())";
+            $link = "../departmentDeanDashboard/reviewThesis.php?id=" . $thesis_id;
+            $insert = "INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) VALUES (?, ?, ?, 'dean_forward', ?, 0, NOW())";
             $stmt = $conn->prepare($insert);
             $stmt->bind_param("iisss", $dean['user_id'], $thesis_id, $message, $link);
             $stmt->execute();
@@ -158,10 +124,10 @@ if ($thesis_table_exists) {
     }
 }
 
-// MARK NOTIFICATION AS READ - using 'status' instead of 'is_read'
+// MARK NOTIFICATION AS READ
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
-    $update_query = "UPDATE notifications SET status = 1 WHERE notification_id = ? AND user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("ii", $notif_id, $user_id);
     $update_stmt->execute();
@@ -170,9 +136,9 @@ if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     exit;
 }
 
-// MARK ALL NOTIFICATIONS AS READ - using 'status' instead of 'is_read'
+// MARK ALL NOTIFICATIONS AS READ
 if (isset($_POST['mark_all_read'])) {
-    $update_query = "UPDATE notifications SET status = 1 WHERE user_id = ?";
+    $update_query = "UPDATE notifications SET is_read = 1 WHERE user_id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("i", $user_id);
     $update_stmt->execute();
@@ -183,6 +149,7 @@ if (isset($_POST['mark_all_read'])) {
 
 // FORWARD THESIS TO DEAN
 if (isset($_POST['forward_to_dean']) && isset($_POST['thesis_id']) && $thesis_table_exists) {
+    header('Content-Type: application/json');
     $thesis_id = intval($_POST['thesis_id']);
     $thesis_title = $_POST['thesis_title'] ?? '';
     $student_name = $_POST['student_name'] ?? '';
@@ -202,8 +169,9 @@ if (isset($_POST['forward_to_dean']) && isset($_POST['thesis_id']) && $thesis_ta
 
 // REJECT THESIS
 if (isset($_POST['reject_thesis']) && isset($_POST['thesis_id']) && $thesis_table_exists) {
+    header('Content-Type: application/json');
     $thesis_id = intval($_POST['thesis_id']);
-    $reason = isset($_POST['reason']) ? $_POST['reason'] : 'No reason provided';
+    $reason = $_POST['reason'] ?? 'No reason provided';
     
     $update_thesis = "UPDATE thesis_table SET status = 'rejected' WHERE thesis_id = ?";
     $update_stmt = $conn->prepare($update_thesis);
@@ -629,8 +597,19 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .status-badge.pending_coordinator { background: #fef3c7; color: #d97706; }
         .status-badge.forwarded_to_dean { background: #dbeafe; color: #2563eb; }
         .status-badge.rejected { background: #fee2e2; color: #dc2626; }
-        .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #fef2f2; color: #dc2626; text-decoration: none; border-radius: 20px; font-size: 0.7rem; }
-        .btn-view:hover { background: #fee2e2; }
+        .btn-view { 
+            display: inline-flex; 
+            align-items: center; 
+            gap: 5px; 
+            padding: 5px 12px; 
+            background: #dc2626; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 20px; 
+            font-size: 0.7rem; 
+            transition: all 0.3s; 
+        }
+        .btn-view:hover { background: #991b1b; transform: scale(1.05); }
         
         .notification-card {
             background: white;
@@ -796,7 +775,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         body.dark-mode .thesis-title { color: #e5e7eb; }
         body.dark-mode .theses-table td { color: #e5e7eb; border-bottom-color: #3d3d3d; }
         body.dark-mode .profile-dropdown, body.dark-mode .notification-dropdown { background: #2d2d2d; border-color: #991b1b; }
-        body.dark-mode .btn-view { background: #3d3d3d; color: #fecaca; }
+        body.dark-mode .btn-view { background: #dc2626; color: white; }
         body.dark-mode .notification-list-item { background: #3d3d3d; }
         body.dark-mode .notification-message-text { color: #e5e7eb; }
         body.dark-mode .status-labels,
@@ -832,7 +811,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="notification-container">
                 <div class="notification-icon" id="notificationIcon">
                     <i class="far fa-bell"></i>
-                    <!-- FIXED: Always show badge with count, hide with CSS if 0 -->
                     <span class="notification-badge" id="notificationBadge" style="display: <?= $notificationCount > 0 ? 'flex' : 'none' ?>;">
                         <?= $notificationCount ?>
                     </span>
@@ -854,7 +832,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             </div>
                         <?php else: ?>
                             <?php foreach ($recentNotifications as $notif): ?>
-                                <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-item <?= $notif['status'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
+                                <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>">
                                     <div class="notif-icon">
                                         <?php 
                                         if(strpos($notif['message'], 'submitted') !== false || strpos($notif['message'], 'forwarded') !== false) 
@@ -1005,13 +983,64 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 
         <div class="theses-card">
             <div class="card-header"><h3><i class="fas fa-clock"></i> Theses Waiting for Your Review</h3><a href="reviewThesis.php" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
-            <?php if (empty($pendingTheses)): ?><div class="empty-state"><i class="fas fa-check-circle"></i><p>No pending theses to review</p></div>
-            <?php else: ?><div class="theses-list"><?php foreach ($pendingTheses as $thesis): ?><div class="thesis-item"><div class="thesis-info"><div class="thesis-title"><?= htmlspecialchars($thesis['title']) ?></div><div class="thesis-meta"><span><i class="fas fa-user"></i> <?= htmlspecialchars($thesis['author']) ?></span><span><i class="fas fa-calendar"></i> <?= $thesis['date'] ?></span></div></div><a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="review-btn">Review <i class="fas fa-arrow-right"></i></a></div><?php endforeach; ?></div><?php endif; ?>
+            <?php if (empty($pendingTheses)): ?>
+                <div class="empty-state"><i class="fas fa-check-circle"></i><p>No pending theses to review</p></div>
+            <?php else: ?>
+                <div class="theses-list">
+                    <?php foreach ($pendingTheses as $thesis): ?>
+                    <div class="thesis-item">
+                        <div class="thesis-info">
+                            <div class="thesis-title"><?= htmlspecialchars($thesis['title']) ?></div>
+                            <div class="thesis-meta">
+                                <span><i class="fas fa-user"></i> <?= htmlspecialchars($thesis['author']) ?></span>
+                                <span><i class="fas fa-calendar"></i> <?= $thesis['date'] ?></span>
+                            </div>
+                        </div>
+                        <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="review-btn">Review <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
 
         <div class="submissions-card">
             <div class="card-header"><h3><i class="fas fa-file-alt"></i> All Thesis Submissions</h3><div class="search-area-small"><i class="fas fa-search"></i><input type="text" id="thesisSearchInput" placeholder="Search theses..."></div></div>
-            <div class="table-responsive"><table class="theses-table"><thead><tr><th>Thesis Title</th><th>Author</th><th>Date</th><th>Status</th><th>Action</th></tr></thead><tbody id="thesisTableBody"><?php foreach ($allThesesWithStatus as $thesis): ?><tr><td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td><td><?= htmlspecialchars($thesis['author']) ?></td><td><?= $thesis['date'] ?></td><td><span class="status-badge <?= $thesis['status'] ?>"><?php $status_text = ucfirst(str_replace('_', ' ', $thesis['status'])); if ($status_text == 'Pending_coordinator') $status_text = 'Pending Review'; echo $status_text; ?></span></td><td><a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td></tr><?php endforeach; ?></tbody></table></div>
+            <div class="table-responsive">
+                <table class="theses-table">
+                    <thead>
+                        <tr>
+                            <th>Thesis Title</th>
+                            <th>Author</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="thesisTableBody">
+                        <?php foreach ($allThesesWithStatus as $thesis): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
+                            <td><?= htmlspecialchars($thesis['author']) ?></td>
+                            <td><?= $thesis['date'] ?></td>
+                            <td>
+                                <span class="status-badge <?= $thesis['status'] ?>">
+                                    <?php 
+                                    $status_text = ucfirst(str_replace('_', ' ', $thesis['status'])); 
+                                    if ($status_text == 'Pending_coordinator') $status_text = 'Pending Review'; 
+                                    echo $status_text; 
+                                    ?>
+                                </span>
+                            </td>
+                            <td>
+                                <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
+                                    <i class="fas fa-eye"></i> View
+                                </a>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </main>
 
