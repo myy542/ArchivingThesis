@@ -2,7 +2,6 @@
 session_start();
 include("../config/db.php");
 include("../config/archive_manager.php");
-include("includes/submission_functions.php");
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
@@ -16,7 +15,12 @@ $archiveManager = new ArchiveManager($conn);
 $user_id = (int)$_SESSION["user_id"];
 
 // Get user data
-$user = getUserData($conn, $user_id);
+$user_query = "SELECT first_name, last_name, email FROM user_table WHERE user_id = ?";
+$user_stmt = $conn->prepare($user_query);
+$user_stmt->bind_param("i", $user_id);
+$user_stmt->execute();
+$user = $user_stmt->get_result()->fetch_assoc();
+$user_stmt->close();
 
 if (!$user) {
     session_destroy();
@@ -29,22 +33,203 @@ $last  = trim($user["last_name"] ?? "");
 $displayName = trim($first . " " . $last);
 $initials = $first && $last ? strtoupper(substr($first, 0, 1) . substr($last, 0, 1)) : "U";
 
-// Get notification count
-$notificationCount = getNotificationCount($conn, $user_id);
+// Create thesis_invitations table if not exists
+$conn->query("CREATE TABLE IF NOT EXISTS thesis_invitations (
+    invitation_id INT AUTO_INCREMENT PRIMARY KEY,
+    thesis_id INT NOT NULL,
+    invited_user_id INT NOT NULL,
+    invited_by INT NOT NULL,
+    invitation_status ENUM('pending', 'accepted', 'declined') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX (thesis_id),
+    INDEX (invited_user_id),
+    INDEX (invitation_status)
+)");
+
+// Create thesis_collaborators table if not exists
+$conn->query("CREATE TABLE IF NOT EXISTS thesis_collaborators (
+    collaborator_id INT AUTO_INCREMENT PRIMARY KEY,
+    thesis_id INT NOT NULL,
+    user_id INT NOT NULL,
+    role VARCHAR(50) DEFAULT 'co-author',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (thesis_id),
+    INDEX (user_id),
+    UNIQUE KEY unique_collaborator (thesis_id, user_id)
+)");
+
+// Get notification count - using is_read
+$notificationCount = 0;
+$notif_query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0";
+$notif_stmt = $conn->prepare($notif_query);
+$notif_stmt->bind_param("i", $user_id);
+$notif_stmt->execute();
+$notif_result = $notif_stmt->get_result();
+if ($notif_row = $notif_result->fetch_assoc()) {
+    $notificationCount = $notif_row['count'];
+}
+$notif_stmt->close();
 
 // Handle form submission
 $successMessage = "";
 $formErrors = [];
 
 if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['submit_thesis'])) {
-    $result = handleThesisSubmission($conn, $user_id, $first, $last, $_POST, $_FILES);
+    $title = trim($_POST['title'] ?? '');
+    $abstract = trim($_POST['abstract'] ?? '');
+    $keywords = trim($_POST['keywords'] ?? '');
+    $department = trim($_POST['department'] ?? '');
+    $year = trim($_POST['year'] ?? '');
+    $adviser = trim($_POST['adviser'] ?? '');
+    $invite_emails = trim($_POST['invite_emails'] ?? '');
     
-    if ($result['success']) {
-        $_SESSION['submission_success'] = $result['message'];
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit;
+    // Validation
+    $errors = [];
+    if (empty($title)) $errors[] = "Thesis title is required.";
+    if (strlen($title) < 5) $errors[] = "Title must be at least 5 characters.";
+    if (empty($abstract)) $errors[] = "Abstract is required.";
+    if (strlen($abstract) < 50) $errors[] = "Abstract must be at least 50 characters.";
+    if (empty($keywords)) $errors[] = "Keywords are required.";
+    if (empty($department)) $errors[] = "Department is required.";
+    if (empty($year)) $errors[] = "Year is required.";
+    if (empty($adviser)) $errors[] = "Adviser name is required.";
+    
+    // File validation
+    if (empty($_FILES["manuscript"]["name"])) {
+        $errors[] = "Manuscript file is required.";
     } else {
-        $formErrors = $result['errors'];
+        $file = $_FILES["manuscript"];
+        $ext = strtolower(pathinfo($file["name"], PATHINFO_EXTENSION));
+        if ($ext !== "pdf") $errors[] = "Only PDF files are allowed.";
+        if ($file["size"] > 10 * 1024 * 1024) $errors[] = "File size must not exceed 10MB.";
+    }
+    
+    if (empty($errors)) {
+        $uploadDir = __DIR__ . "/../uploads/manuscripts/";
+        if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
+        
+        $timestamp = time();
+        $safeTitle = preg_replace('/[^a-zA-Z0-9]/', '_', $title);
+        $safeTitle = substr($safeTitle, 0, 50);
+        $newFileName = $timestamp . '_' . $safeTitle . '.pdf';
+        $uploadPath = $uploadDir . $newFileName;
+        
+        if (move_uploaded_file($file["tmp_name"], $uploadPath)) {
+            chmod($uploadPath, 0644);
+            $dbFilePath = 'uploads/manuscripts/' . $newFileName;
+            
+            // INSERT into thesis_table
+            $insertQuery = "INSERT INTO thesis_table (student_id, title, abstract, keywords, department, year, adviser, file_path, date_submitted, is_archived) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0)";
+            $insertStmt = $conn->prepare($insertQuery);
+            $insertStmt->bind_param("isssssss", $user_id, $title, $abstract, $keywords, $department, $year, $adviser, $dbFilePath);
+            
+            if ($insertStmt->execute()) {
+                $thesis_id = $insertStmt->insert_id;
+                $insertStmt->close();
+                
+                // Add the creator as collaborator (owner)
+                $collabQuery = "INSERT INTO thesis_collaborators (thesis_id, user_id, role) VALUES (?, ?, 'owner')";
+                $collabStmt = $conn->prepare($collabQuery);
+                $collabStmt->bind_param("ii", $thesis_id, $user_id);
+                $collabStmt->execute();
+                $collabStmt->close();
+                
+                // ==================== SEND NOTIFICATION TO FACULTY ====================
+                $facultyQuery = "SELECT user_id FROM user_table WHERE role_id = 3";
+                $facultyResult = $conn->query($facultyQuery);
+                
+                if ($facultyResult && $facultyResult->num_rows > 0) {
+                    $studentName = $displayName;
+                    $shortTitle = strlen($title) > 50 ? substr($title, 0, 50) . '...' : $title;
+                    $message = "📢 New thesis submission from " . $studentName . ": \"" . $shortTitle . "\"";
+                    $link = "../faculty/reviewThesis.php?id=" . $thesis_id;
+                    
+                    while ($faculty = $facultyResult->fetch_assoc()) {
+                        $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
+                                    VALUES (?, ?, ?, 'thesis_submission', ?, 0, NOW())";
+                        $notifStmt = $conn->prepare($notifSql);
+                        $notifStmt->bind_param("iiss", $faculty['user_id'], $thesis_id, $message, $link);
+                        $notifStmt->execute();
+                        $notifStmt->close();
+                    }
+                }
+                
+                // Process invited co-authors
+                $invited_count = 0;
+                $invited_list = [];
+                $invite_errors = [];
+                
+                if (!empty($invite_emails)) {
+                    $emails = array_map('trim', explode(',', $invite_emails));
+                    
+                    foreach ($emails as $email) {
+                        if (!empty($email) && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                            // Check if user exists
+                            $userCheck = $conn->prepare("SELECT user_id, first_name, last_name, email FROM user_table WHERE email = ?");
+                            $userCheck->bind_param("s", $email);
+                            $userCheck->execute();
+                            $invited_user = $userCheck->get_result()->fetch_assoc();
+                            $userCheck->close();
+                            
+                            if ($invited_user && $invited_user['user_id'] != $user_id) {
+                                // Check if already invited
+                                $checkInvite = $conn->prepare("SELECT * FROM thesis_invitations WHERE thesis_id = ? AND invited_user_id = ?");
+                                $checkInvite->bind_param("ii", $thesis_id, $invited_user['user_id']);
+                                $checkInvite->execute();
+                                $existing = $checkInvite->get_result()->fetch_assoc();
+                                $checkInvite->close();
+                                
+                                if (!$existing) {
+                                    // Send invitation
+                                    $inviteQuery = "INSERT INTO thesis_invitations (thesis_id, invited_user_id, invited_by, invitation_status) VALUES (?, ?, ?, 'pending')";
+                                    $inviteStmt = $conn->prepare($inviteQuery);
+                                    $inviteStmt->bind_param("iii", $thesis_id, $invited_user['user_id'], $user_id);
+                                    $inviteStmt->execute();
+                                    $inviteStmt->close();
+                                    
+                                    // Send notification to invited user
+                                    $notifMessage = "📢 " . $displayName . " invited you to collaborate on thesis: \"" . $title . "\"";
+                                    $notifQuery = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'thesis_invitation', 0, NOW())";
+                                    $notifStmt = $conn->prepare($notifQuery);
+                                    $notifStmt->bind_param("iis", $invited_user['user_id'], $thesis_id, $notifMessage);
+                                    $notifStmt->execute();
+                                    $notifStmt->close();
+                                    
+                                    $invited_count++;
+                                    $invited_list[] = $invited_user['email'];
+                                }
+                            } elseif ($invited_user && $invited_user['user_id'] == $user_id) {
+                                $invite_errors[] = "You cannot invite yourself as a co-author.";
+                            } else {
+                                $invite_errors[] = "User with email '" . $email . "' not found in the system.";
+                            }
+                        } elseif (!empty($email)) {
+                            $invite_errors[] = "Invalid email address: '" . $email . "'";
+                        }
+                    }
+                }
+                
+                $successMessage = "✅ Thesis submitted successfully! Faculty have been notified.";
+                if ($invited_count > 0) {
+                    $successMessage .= " " . $invited_count . " invitation(s) sent to: " . implode(", ", $invited_list);
+                }
+                if (!empty($invite_errors)) {
+                    $successMessage .= " Note: " . implode(", ", $invite_errors);
+                }
+                
+                $_SESSION['submission_success'] = $successMessage;
+                header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
+                exit;
+            } else {
+                $formErrors[] = "Database error: Failed to save thesis. " . $conn->error;
+            }
+        } else {
+            $formErrors[] = "Failed to upload file. Please check folder permissions.";
+        }
+    } else {
+        $formErrors = $errors;
     }
 }
 
@@ -55,7 +240,20 @@ if (isset($_SESSION['submission_success'])) {
 }
 
 // Get recent submissions
-$recentSubmissions = getRecentSubmissions($conn, $user_id);
+$recentSubmissions = [];
+$recentQuery = "SELECT thesis_id, title, file_path, date_submitted
+                FROM thesis_table 
+                WHERE student_id = ?
+                ORDER BY date_submitted DESC
+                LIMIT 5";
+$recentStmt = $conn->prepare($recentQuery);
+$recentStmt->bind_param("i", $user_id);
+$recentStmt->execute();
+$recentResult = $recentStmt->get_result();
+while ($row = $recentResult->fetch_assoc()) {
+    $recentSubmissions[] = $row;
+}
+$recentStmt->close();
 
 $pageTitle = "Submit Thesis";
 ?>
@@ -86,7 +284,6 @@ $pageTitle = "Submit Thesis";
             color: #e0e0e0;
         }
 
-        /* Sidebar Styles */
         .sidebar {
             position: fixed;
             top: 0;
@@ -209,7 +406,6 @@ $pageTitle = "Submit Thesis";
             display: block;
         }
 
-        /* Main Content */
         .main-content {
             flex: 1;
             margin-left: 0;
@@ -363,7 +559,59 @@ $pageTitle = "Submit Thesis";
             border-top: 1px solid #e0e0e0;
         }
 
-        /* Submission Container */
+        .invite-section {
+            margin-top: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1.25rem;
+            background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+            border-radius: 12px;
+            border: 1px solid #fee2e2;
+        }
+
+        body.dark-mode .invite-section {
+            background: #3d2a2a;
+            border-color: #732529;
+        }
+
+        .invite-section label {
+            font-weight: 600;
+            color: #732529;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        body.dark-mode .invite-section label {
+            color: #FE4853;
+        }
+
+        .invite-section input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #fee2e2;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        body.dark-mode .invite-section input {
+            background: #4a4a4a;
+            border-color: #6E6E6E;
+            color: #e0e0e0;
+        }
+
+        .invite-note {
+            font-size: 0.75rem;
+            color: #6E6E6E;
+            margin-top: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .invite-note i {
+            color: #FE4853;
+        }
+
         .submission-container {
             max-width: 900px;
             margin: 0 auto;
@@ -378,6 +626,18 @@ $pageTitle = "Submit Thesis";
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            animation: slideDown 0.5s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .error-container {
@@ -577,7 +837,6 @@ $pageTitle = "Submit Thesis";
             background: #f5f5f5;
         }
 
-        /* Recent Submissions */
         .recent-submissions {
             background: white;
             border-radius: 12px;
@@ -641,39 +900,6 @@ $pageTitle = "Submit Thesis";
 
         body.dark-mode .submission-info h4 {
             color: #e0e0e0;
-        }
-
-        .status-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .status-pending {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-pending_coordinator {
-            background: #cce5ff;
-            color: #004085;
-        }
-
-        .status-approved {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-rejected {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .status-archived {
-            background: #d1ecf1;
-            color: #0c5460;
         }
 
         .file-indicator {
@@ -763,6 +989,9 @@ $pageTitle = "Submit Thesis";
         </a>
         <a href="archived.php" class="nav-link">
             <i class="fas fa-archive"></i> Archived Theses
+        </a>
+        <a href="profile.php" class="nav-link">
+            <i class="fas fa-user-circle"></i> Profile
         </a>
     </nav>
     <div class="sidebar-footer">
@@ -858,10 +1087,20 @@ $pageTitle = "Submit Thesis";
                         <input type="text" id="keywords" name="keywords" required
                                value="<?= htmlspecialchars($_POST['keywords'] ?? '') ?>"
                                placeholder="e.g., Machine Learning, Education, Data Analysis (separate with commas)">
-                        <small class="form-text">Separate keywords with commas. At least 3 keywords.</small>
+                        <small class="form-text">Separate keywords with commas. At least 3 keywords recommended.</small>
                     </div>
 
-                    <!-- UPDATED DEPARTMENT SECTION - BSIT, BSCRIM, BSHTM, BSED, BSBA -->
+                    <div class="invite-section">
+                        <label><i class="fas fa-envelope"></i> Invite Co-Authors <span style="color: #6E6E6E; font-weight: normal;">(Optional)</span></label>
+                        <input type="text" id="invite_emails" name="invite_emails" 
+                               placeholder="Enter email addresses separated by commas (e.g., john@example.com, jane@example.com) - Leave blank if none"
+                               value="<?= htmlspecialchars($_POST['invite_emails'] ?? '') ?>">
+                        <div class="invite-note">
+                            <i class="fas fa-info-circle"></i> 
+                            Optional: Enter email addresses of co-authors. Leave blank if you don't have co-authors.
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label for="department"><i class="fas fa-building"></i> Department <span class="required">*</span></label>
                         <select id="department" name="department" required>
@@ -895,17 +1134,22 @@ $pageTitle = "Submit Thesis";
                     <div class="form-group">
                         <label for="manuscript"><i class="fas fa-file-pdf"></i> Upload Manuscript <span class="required">*</span></label>
                         <div class="file-upload-wrapper">
-                            <input type="file" id="manuscript" name="manuscript" accept=".pdf" required>
+                            <input type="file" id="manuscript" name="manuscript" accept=".pdf" required style="display: none;">
+                            <div onclick="document.getElementById('manuscript').click()" style="cursor: pointer;">
+                                <i class="fas fa-cloud-upload-alt" style="font-size: 2rem; color: #FE4853;"></i>
+                                <p>Click or drag to upload PDF file</p>
+                            </div>
                             <div class="file-upload-info">
                                 <i class="fas fa-info-circle"></i>
                                 <span>Accepted format: PDF only | Maximum size: 10MB</span>
                             </div>
                         </div>
+                        <span id="file-name" style="font-size: 0.75rem; color: #10b981; display: block; margin-top: 0.5rem;"></span>
                     </div>
 
                     <div class="form-footer">
                         <button type="submit" name="submit_thesis" class="btn primary">
-                            <i class="fas fa-paper-plane"></i> Submit for Review
+                            <i class="fas fa-paper-plane"></i> Submit Thesis
                         </button>
                         <button type="reset" class="btn secondary" onclick="return confirm('Are you sure you want to clear the form?')">
                             <i class="fas fa-undo"></i> Clear Form
@@ -922,19 +1166,13 @@ $pageTitle = "Submit Thesis";
                         <div class="submission-item">
                             <div class="submission-info">
                                 <h4><?= htmlspecialchars($sub['title']) ?></h4>
-                                <span class="status-badge status-<?= strtolower(str_replace(' ', '_', $sub['status'])) ?>">
-                                    <?= ucfirst(htmlspecialchars($sub['status'])) ?>
-                                </span>
                                 <?php if (!empty($sub['file_path'])): ?>
                                     <span class="file-indicator" title="Manuscript uploaded">
                                         <i class="fas fa-file-pdf"></i> PDF
                                     </span>
                                 <?php endif; ?>
                             </div>
-                            <?php 
-                            $dateField = isset($sub['created_at']) ? $sub['created_at'] : (isset($sub['date_submitted']) ? $sub['date_submitted'] : date('Y-m-d H:i:s'));
-                            ?>
-                            <small><?= date('M d, Y', strtotime($dateField)) ?></small>
+                            <small><?= date('M d, Y', strtotime($sub['date_submitted'])) ?></small>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -945,7 +1183,20 @@ $pageTitle = "Submit Thesis";
 </div>
 
 <script>
-    // Dark Mode
+    const fileInput = document.getElementById('manuscript');
+    const fileNameSpan = document.getElementById('file-name');
+    
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                fileNameSpan.innerHTML = '<i class="fas fa-check-circle"></i> Selected: ' + this.files[0].name;
+                fileNameSpan.style.color = '#10b981';
+            } else {
+                fileNameSpan.innerHTML = '';
+            }
+        });
+    }
+
     const darkToggle = document.getElementById('darkmode');
     if (darkToggle) {
         darkToggle.addEventListener('change', () => {
@@ -958,7 +1209,6 @@ $pageTitle = "Submit Thesis";
         }
     }
 
-    // Sidebar
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('overlay');
     const hamburgerBtn = document.getElementById('hamburgerBtn');
@@ -973,7 +1223,6 @@ $pageTitle = "Submit Thesis";
     if (mobileBtn) mobileBtn.addEventListener('click', toggleSidebar);
     if (overlay) overlay.addEventListener('click', toggleSidebar);
 
-    // Avatar Dropdown
     const avatarBtn = document.getElementById('avatarBtn');
     const dropdownMenu = document.getElementById('dropdownMenu');
 
@@ -989,20 +1238,6 @@ $pageTitle = "Submit Thesis";
             dropdownMenu.classList.remove('show');
         }
     });
-
-    // File input styling
-    const fileInput = document.getElementById('manuscript');
-    if (fileInput) {
-        fileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                const wrapper = this.closest('.file-upload-wrapper');
-                wrapper.style.borderColor = '#10b981';
-                setTimeout(() => {
-                    wrapper.style.borderColor = '#e0e0e0';
-                }, 2000);
-            }
-        });
-    }
 </script>
 
 </body>

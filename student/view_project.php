@@ -32,17 +32,8 @@ $last_name = $user_data['last_name'] ?? '';
 $fullName = trim($first_name . " " . $last_name);
 $initials = !empty($first_name) && !empty($last_name) ? strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1)) : "U";
 
-// Get student_id
+// REMOVED: student_table query - diretso na lang gamit ang user_id
 $student_id = $user_id;
-$student_query = "SELECT student_id FROM student_table WHERE user_id = ? LIMIT 1";
-$student_stmt = $conn->prepare($student_query);
-$student_stmt->bind_param("i", $user_id);
-$student_stmt->execute();
-$student_result = $student_stmt->get_result();
-if ($student_row = $student_result->fetch_assoc()) {
-    $student_id = $student_row['student_id'];
-}
-$student_stmt->close();
 
 // Get thesis details
 $thesis_query = "SELECT t.*, 
@@ -59,6 +50,11 @@ $thesis_stmt->close();
 if (!$thesis) {
     header("Location: projects.php");
     exit;
+}
+
+// If status is not set, determine from is_archived
+if (!isset($thesis['status']) || $thesis['status'] === null) {
+    $thesis['status'] = ($thesis['is_archived'] == 1) ? 'archived' : 'pending';
 }
 
 // Get all feedback
@@ -79,7 +75,8 @@ $feedback_stmt->close();
 
 // Helper function for status display
 function getStatusClass($status) {
-    switch (strtolower($status)) {
+    $status = strtolower((string)$status);
+    switch ($status) {
         case 'pending': return 'status-pending';
         case 'pending_coordinator': return 'status-pending-coordinator';
         case 'forwarded_to_dean': return 'status-forwarded';
@@ -91,7 +88,8 @@ function getStatusClass($status) {
 }
 
 function getStatusText($status) {
-    switch (strtolower($status)) {
+    $status = strtolower((string)$status);
+    switch ($status) {
         case 'pending': return 'Pending Faculty Review';
         case 'pending_coordinator': return 'Pending Coordinator Review';
         case 'forwarded_to_dean': return 'Forwarded to Dean';
@@ -381,7 +379,7 @@ $pageTitle = "View Project - " . htmlspecialchars($thesis['title']);
 
         <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
             <a href="projects.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Projects</a>
-            <?php if ($thesis['status'] == 'pending'): ?>
+            <?php if (isset($thesis['status']) && $thesis['status'] == 'pending'): ?>
                 <span class="btn btn-secondary" style="opacity: 0.7; cursor: not-allowed;"><i class="fas fa-edit"></i> Edit (Locked - Under Review)</span>
             <?php endif; ?>
         </div>

@@ -41,14 +41,14 @@ $last = $faculty['last_name'] ?? '';
 $fullName = trim($first . ' ' . $last);
 $initials = strtoupper(substr($first, 0, 1) . substr($last, 0, 1));
 
-// Create feedback table if not exists
+// Create feedback table if not exists - FIXED: Use thesis_table instead of theses
 $createTable = "CREATE TABLE IF NOT EXISTS feedback_table (
     feedback_id INT AUTO_INCREMENT PRIMARY KEY,
     thesis_id INT NOT NULL,
     faculty_id INT NOT NULL,
     comments TEXT NOT NULL,
     feedback_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (thesis_id) REFERENCES theses(thesis_id),
+    FOREIGN KEY (thesis_id) REFERENCES thesis_table(thesis_id),
     FOREIGN KEY (faculty_id) REFERENCES user_table(user_id)
 )";
 $conn->query($createTable);
@@ -119,10 +119,12 @@ if (isset($_GET['get_feedback'])) {
     exit;
 }
 
-// Get all feedback by this faculty
-$feedbackQuery = "SELECT f.*, t.title as thesis_title, t.author as student_name
+// Get all feedback by this faculty - FIXED: Use thesis_table instead of theses
+$feedbackQuery = "SELECT f.*, t.title as thesis_title, 
+                         CONCAT(u.first_name, ' ', u.last_name) as student_name
                   FROM feedback_table f
-                  JOIN theses t ON f.thesis_id = t.thesis_id
+                  JOIN thesis_table t ON f.thesis_id = t.thesis_id
+                  JOIN user_table u ON t.student_id = u.user_id
                   WHERE f.faculty_id = ?
                   ORDER BY f.feedback_date DESC";
 $stmt = $conn->prepare($feedbackQuery);
@@ -131,8 +133,8 @@ $stmt->execute();
 $feedbackList = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// Get pending theses for feedback dropdown
-$pendingQuery = "SELECT thesis_id, title, author FROM theses WHERE status = 'Pending'";
+// Get pending theses for feedback dropdown - FIXED: Use thesis_table and is_archived
+$pendingQuery = "SELECT thesis_id, title FROM thesis_table WHERE (is_archived = 0 OR is_archived IS NULL) ORDER BY date_submitted DESC";
 $pendingResult = $conn->query($pendingQuery);
 $pendingTheses = $pendingResult->fetch_all(MYSQLI_ASSOC);
 
@@ -952,7 +954,7 @@ $pageTitle = "My Feedback";
                         <option value="">-- Choose a thesis --</option>
                         <?php foreach ($pendingTheses as $thesis): ?>
                             <option value="<?= $thesis['thesis_id'] ?>">
-                                <?= htmlspecialchars($thesis['title'] . ' - ' . $thesis['author']) ?>
+                                <?= htmlspecialchars($thesis['title']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -1129,7 +1131,7 @@ $pageTitle = "My Feedback";
         // ==================== INITIALIZE ====================
         initDarkMode();
         
-        console.log('Faculty Feedback Page Initialized - Menu Bar Style Sidebar');
+        console.log('Faculty Feedback Page Initialized - Using thesis_table');
     </script>
 </body>
 </html>

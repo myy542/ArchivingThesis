@@ -17,20 +17,6 @@ $thesis_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // ==================== FUNCTION TO NOTIFY COORDINATOR ====================
 function notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $faculty_name) {
-    // Make sure notifications table exists
-    $conn->query("CREATE TABLE IF NOT EXISTS notifications (
-        notification_id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        thesis_id INT NULL,
-        message TEXT NOT NULL,
-        type VARCHAR(50) DEFAULT 'info',
-        link VARCHAR(255) NULL,
-        status TINYINT DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX (user_id),
-        INDEX (status)
-    )");
-    
     // Get all coordinators (role_id = 6)
     $coord_query = "SELECT user_id FROM user_table WHERE role_id = 6";
     $coord_result = $conn->query($coord_query);
@@ -42,16 +28,15 @@ function notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $fac
     
     $message = "📢 New thesis forwarded for review: \"" . $thesis_title . "\" from student " . $student_name . ". Faculty: " . $faculty_name . " has approved this thesis.";
     $link = "../coordinator/reviewThesis.php?id=" . $thesis_id;
-    $type = 'faculty_forward';
     
     $notified = false;
     while ($coordinator = $coord_result->fetch_assoc()) {
         $coordinator_id = $coordinator['user_id'];
         
-        $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
-                    VALUES (?, ?, ?, ?, ?, 0, NOW())";
+        $notifSql = "INSERT INTO notifications (user_id, thesis_id, message, type, link, is_read, created_at) 
+                    VALUES (?, ?, ?, 'faculty_forward', ?, 0, NOW())";
         $notifStmt = $conn->prepare($notifSql);
-        $notifStmt->bind_param("iisss", $coordinator_id, $thesis_id, $message, $type, $link);
+        $notifStmt->bind_param("iiss", $coordinator_id, $thesis_id, $message, $link);
         
         if ($notifStmt->execute()) {
             $notified = true;
@@ -69,11 +54,11 @@ if(isset($_POST['archive_thesis'])) {
     $retention = $_POST['retention_period'] ?? 5;
     
     if($archive->archiveThesis($archive_thesis_id, $_SESSION['user_id'], $notes, $retention)) {
-        $_SESSION['success'] = "Thesis archived successfully!";
+        $_SESSION['success_message'] = "Thesis archived successfully!";
         header("Location: reviewThesis.php?id=" . $archive_thesis_id);
         exit();
     } else {
-        $_SESSION['error'] = implode("<br>", $archive->getErrors());
+        $_SESSION['error_message'] = implode("<br>", $archive->getErrors());
         header("Location: reviewThesis.php?id=" . $archive_thesis_id);
         exit();
     }
@@ -126,6 +111,11 @@ try {
 $message = '';
 $messageType = '';
 
+// Determine thesis status based on available columns
+// Since wala'y status column, pending ang default unless archived
+$is_archived = isset($thesis['is_archived']) ? (int)$thesis['is_archived'] : 0;
+$thesis_status = ($is_archived == 1) ? 'archived' : 'pending';
+
 // ==================== HANDLE APPROVE ====================
 if (isset($_POST['approve_thesis'])) {
     $feedback = isset($_POST['feedback']) ? trim($_POST['feedback']) : '';
@@ -133,11 +123,9 @@ if (isset($_POST['approve_thesis'])) {
     $conn->begin_transaction();
     
     try {
-        $updateQuery = "UPDATE thesis_table SET status = 'pending_coordinator' WHERE thesis_id = ?";
-        $stmt = $conn->prepare($updateQuery);
-        $stmt->bind_param("i", $thesis_id);
-        $stmt->execute();
-        $stmt->close();
+        // Since wala'y status column, we'll just add feedback and notify coordinator
+        // Option: Add a new column for approval status if needed
+        // For now, we'll just record the feedback
         
         if (!empty($feedback)) {
             $insertQuery = "INSERT INTO feedback_table (thesis_id, faculty_id, comments, feedback_date) 
@@ -154,6 +142,13 @@ if (isset($_POST['approve_thesis'])) {
         
         notifyCoordinator($conn, $thesis_id, $thesis_title, $student_name, $faculty_name);
         
+        // Notify student
+        $studentMessage = "✅ Your thesis \"" . $thesis_title . "\" has been approved by faculty " . $faculty_name . " and forwarded to the coordinator for final review.";
+        $notifStmt = $conn->prepare("INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) VALUES (?, ?, ?, 'thesis_approved', 0, NOW())");
+        $notifStmt->bind_param("iis", $thesis['student_user_id'], $thesis_id, $studentMessage);
+        $notifStmt->execute();
+        $notifStmt->close();
+        
         $conn->commit();
         
         $_SESSION['success_message'] = "✓ Thesis approved and forwarded to Coordinator!";
@@ -168,19 +163,13 @@ if (isset($_POST['approve_thesis'])) {
     }
 }
 
-// ==================== HANDLE REJECT/REVISE ====================
+// ==================== HANDLE REJECT ====================
 if (isset($_POST['reject_thesis'])) {
     $feedback = isset($_POST['feedback']) ? trim($_POST['feedback']) : '';
     
     $conn->begin_transaction();
     
     try {
-        $updateQuery = "UPDATE thesis_table SET status = 'rejected' WHERE thesis_id = ?";
-        $stmt = $conn->prepare($updateQuery);
-        $stmt->bind_param("i", $thesis_id);
-        $stmt->execute();
-        $stmt->close();
-        
         if (!empty($feedback)) {
             $insertQuery = "INSERT INTO feedback_table (thesis_id, faculty_id, comments, feedback_date) 
                            VALUES (?, ?, ?, NOW())";
@@ -192,9 +181,9 @@ if (isset($_POST['reject_thesis'])) {
         
         $student_id = $thesis['student_user_id'];
         
-        $notifMessage = "Your thesis '" . $thesis['title'] . "' has been rejected. Reason: " . $feedback;
-        $notifQuery = "INSERT INTO notifications (user_id, thesis_id, message, type, link, status, created_at) 
-                      VALUES (?, ?, ?, 'student_notif', NULL, 0, NOW())";
+        $notifMessage = "❌ Your thesis '" . $thesis['title'] . "' has been rejected. Reason: " . $feedback;
+        $notifQuery = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) 
+                      VALUES (?, ?, ?, 'thesis_rejected', 0, NOW())";
         $stmt2 = $conn->prepare($notifQuery);
         $stmt2->bind_param("iis", $student_id, $thesis_id, $notifMessage);
         $stmt2->execute();
@@ -203,6 +192,46 @@ if (isset($_POST['reject_thesis'])) {
         $conn->commit();
         
         $_SESSION['success_message'] = "✓ Thesis rejected! Student has been notified.";
+        header("Location: reviewThesis.php?id=" . $thesis_id);
+        exit();
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['error_message'] = "Error: " . $e->getMessage();
+        header("Location: reviewThesis.php?id=" . $thesis_id);
+        exit();
+    }
+}
+
+// ==================== HANDLE REVISE ====================
+if (isset($_POST['revise_thesis'])) {
+    $feedback = isset($_POST['feedback']) ? trim($_POST['feedback']) : '';
+    
+    $conn->begin_transaction();
+    
+    try {
+        if (!empty($feedback)) {
+            $insertQuery = "INSERT INTO feedback_table (thesis_id, faculty_id, comments, feedback_date) 
+                           VALUES (?, ?, ?, NOW())";
+            $stmt = $conn->prepare($insertQuery);
+            $stmt->bind_param("iis", $thesis_id, $faculty_id, $feedback);
+            $stmt->execute();
+            $stmt->close();
+        }
+        
+        $student_id = $thesis['student_user_id'];
+        
+        $notifMessage = "📝 Your thesis '" . $thesis['title'] . "' needs revisions. Feedback: " . $feedback;
+        $notifQuery = "INSERT INTO notifications (user_id, thesis_id, message, type, is_read, created_at) 
+                      VALUES (?, ?, ?, 'thesis_revision', 0, NOW())";
+        $stmt2 = $conn->prepare($notifQuery);
+        $stmt2->bind_param("iis", $student_id, $thesis_id, $notifMessage);
+        $stmt2->execute();
+        $stmt2->close();
+        
+        $conn->commit();
+        
+        $_SESSION['success_message'] = "✓ Revision request sent to student!";
         header("Location: reviewThesis.php?id=" . $thesis_id);
         exit();
         
@@ -225,8 +254,6 @@ if (isset($_SESSION['error_message'])) {
     $messageType = "error";
     unset($_SESSION['error_message']);
 }
-
-$current_status = strtolower(trim($thesis['status'] ?? ''));
 
 $pageTitle = "Review Thesis";
 ?>
@@ -278,8 +305,6 @@ $pageTitle = "Review Thesis";
         .thesis-header h2 { color: #732529; }
         .status-badge { padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; text-transform: uppercase; font-size: 0.85rem; }
         .status-badge.pending { background: #fff3cd; color: #856404; }
-        .status-badge.pending_coordinator { background: #cce5ff; color: #004085; }
-        .status-badge.rejected { background: #f8d7da; color: #721c24; }
         .status-badge.archived { background: #e2e3e5; color: #383d41; }
         
         .thesis-details { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-bottom: 2rem; padding: 1.5rem; background: #f8fafc; border-radius: 8px; }
@@ -330,15 +355,15 @@ $pageTitle = "Review Thesis";
             flex-wrap: wrap;
         }
         .btn {
-            padding: 0.4rem 1rem;
+            padding: 0.75rem 1.5rem;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             cursor: pointer;
-            font-weight: 500;
+            font-weight: 600;
             display: inline-flex;
             align-items: center;
-            gap: 0.4rem;
-            font-size: 0.75rem;
+            gap: 0.5rem;
+            font-size: 0.85rem;
             transition: all 0.3s ease;
         }
         .btn-approve {
@@ -347,31 +372,31 @@ $pageTitle = "Review Thesis";
         }
         .btn-approve:hover {
             background: #1e7e34;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
         }
         .btn-revise {
-            background: #dc3545;
-            color: white;
-        }
-        .btn-revise:hover {
-            background: #b02a37;
-            transform: translateY(-1px);
-        }
-        .btn-reject {
-            background: #6c757d;
-            color: white;
-        }
-        .btn-reject:hover {
-            background: #5a6268;
-            transform: translateY(-1px);
-        }
-        .btn-archive {
             background: #ffc107;
             color: #212529;
         }
-        .btn-archive:hover {
+        .btn-revise:hover {
             background: #e0a800;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+        }
+        .btn-reject {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-reject:hover {
+            background: #b02a37;
+            transform: translateY(-2px);
+        }
+        .btn-archive {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-archive:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
         }
         
         .back-link { display: inline-flex; align-items: center; gap: 0.5rem; color: #FE4853; text-decoration: none; margin-bottom: 1rem; }
@@ -441,11 +466,9 @@ $pageTitle = "Review Thesis";
 
             <div class="thesis-header">
                 <h2><?= htmlspecialchars($thesis['title']) ?></h2>
-                <?php 
-                $status_display = ucfirst(str_replace('_', ' ', $thesis['status'] ?? 'Pending'));
-                $status_class = strtolower(str_replace(' ', '_', $thesis['status'] ?? 'pending'));
-                ?>
-                <span class="status-badge <?= htmlspecialchars($status_class) ?>"><?= htmlspecialchars($status_display) ?></span>
+                <span class="status-badge <?= $is_archived == 1 ? 'archived' : 'pending' ?>">
+                    <?= $is_archived == 1 ? 'Archived' : 'Pending Review' ?>
+                </span>
             </div>
 
             <div class="thesis-details">
@@ -453,10 +476,7 @@ $pageTitle = "Review Thesis";
                 <div class="detail-item"><span class="detail-label">Email: </span><span class="detail-value"><?= htmlspecialchars($thesis['student_email']) ?></span></div>
                 <div class="detail-item"><span class="detail-label">Department: </span><span class="detail-value"><?= htmlspecialchars($thesis['department'] ?? 'N/A') ?></span></div>
                 <div class="detail-item"><span class="detail-label">Year: </span><span class="detail-value"><?= htmlspecialchars($thesis['year'] ?? 'N/A') ?></span></div>
-                <?php 
-                $dateField = isset($thesis['date_submitted']) ? $thesis['date_submitted'] : date('Y-m-d H:i:s');
-                ?>
-                <div class="detail-item"><span class="detail-label">Date Submitted: </span><span class="detail-value"><?= date('F d, Y', strtotime($dateField)) ?></span></div>
+                <div class="detail-item"><span class="detail-label">Date Submitted: </span><span class="detail-value"><?= date('F d, Y', strtotime($thesis['date_submitted'] ?? 'now')) ?></span></div>
             </div>
 
             <div class="thesis-abstract"><h3>Abstract</h3><p><?= nl2br(htmlspecialchars($thesis['abstract'] ?? 'No abstract provided.')) ?></p></div>
@@ -472,44 +492,20 @@ $pageTitle = "Review Thesis";
                         </div>
                         <div class="pdf-viewer"><iframe src="<?= htmlspecialchars($file_path) ?>"></iframe></div>
                     <?php else: ?>
-                        <p>File not found.</p>
+                        <p>File not found on server.</p>
                     <?php endif; ?>
                 <?php else: ?>
                     <p>No manuscript file uploaded.</p>
                 <?php endif; ?>
             </div>
 
-            <?php if ($current_status == 'pending'): ?>
+            <?php if ($is_archived == 0): ?>
             <div class="action-buttons">
                 <button class="btn btn-approve" onclick="showApproveModal()">
                     <i class="fas fa-check-circle"></i> APPROVE & FORWARD
                 </button>
                 <button class="btn btn-revise" onclick="showReviseModal()">
-                    <i class="fas fa-edit"></i> REVISE THESIS
-                </button>
-            </div>
-            <?php elseif ($current_status == 'pending_coordinator'): ?>
-            <div class="action-buttons">
-                <div style="background:#cce5ff; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-info-circle"></i> This thesis has been forwarded to the Coordinator for review.
-                </div>
-            </div>
-            <?php elseif ($current_status == 'rejected'): ?>
-            <div class="action-buttons">
-                <div style="background:#f8d7da; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-times-circle"></i> This thesis has been rejected.
-                </div>
-            </div>
-            <?php elseif ($current_status == 'archived'): ?>
-            <div class="action-buttons">
-                <div style="background:#e2e3e5; padding:1rem; border-radius:8px; width:100%;">
-                    <i class="fas fa-archive"></i> This thesis has been archived.
-                </div>
-            </div>
-            <?php else: ?>
-            <div class="action-buttons">
-                <button class="btn btn-approve" onclick="showApproveModal()">
-                    <i class="fas fa-check-circle"></i> APPROVE & FORWARD
+                    <i class="fas fa-edit"></i> REQUEST REVISION
                 </button>
                 <button class="btn btn-reject" onclick="showRejectModal()">
                     <i class="fas fa-times-circle"></i> REJECT THESIS
@@ -517,6 +513,12 @@ $pageTitle = "Review Thesis";
                 <button class="btn btn-archive" onclick="openArchiveModal(<?= $thesis_id ?>)">
                     <i class="fas fa-archive"></i> ARCHIVE THESIS
                 </button>
+            </div>
+            <?php elseif ($is_archived == 1): ?>
+            <div class="action-buttons">
+                <div style="background:#e2e3e5; padding:1rem; border-radius:8px; width:100%;">
+                    <i class="fas fa-archive"></i> This thesis has been archived.
+                </div>
             </div>
             <?php endif; ?>
 
@@ -543,14 +545,14 @@ $pageTitle = "Review Thesis";
 <!-- Revise Modal -->
 <div id="reviseModal" class="modal">
     <div class="modal-content">
-        <h3 style="color:#dc3545;"><i class="fas fa-edit"></i> Revise Thesis</h3>
+        <h3 style="color:#ffc107;"><i class="fas fa-edit"></i> Request Revision</h3>
         <p>Request revisions for this thesis? Student will be notified.</p>
         <form method="POST" action="">
-            <input type="hidden" name="reject_thesis" value="1">
+            <input type="hidden" name="revise_thesis" value="1">
             <textarea name="feedback" rows="3" placeholder="Revision instructions..." style="width:100%; margin:1rem 0; padding:0.75rem; border:1px solid #e0e0e0; border-radius:6px;" required></textarea>
             <div class="modal-buttons">
                 <button type="button" class="btn" style="background:#6c757d; color:white;" onclick="closeReviseModal()">Cancel</button>
-                <button type="submit" class="btn btn-revise">Confirm Revise</button>
+                <button type="submit" class="btn btn-revise">Confirm Revision</button>
             </div>
         </form>
     </div>

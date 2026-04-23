@@ -52,7 +52,7 @@ if (!$check_ip || $check_ip->num_rows == 0) {
     $conn->query("ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(45) AFTER description");
 }
 
-// LOG FUNCTION
+// LOG FUNCTION - for important actions only (add, edit, delete, toggle)
 function logAdminAction($conn, $user_id, $action, $table, $record_id, $description) {
     $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
     if ($ip_address == '::1') $ip_address = '127.0.0.1';
@@ -63,8 +63,8 @@ function logAdminAction($conn, $user_id, $action, $table, $record_id, $descripti
     $stmt->close();
 }
 
-// LOG ADMIN ACCESS
-logAdminAction($conn, $user_id, "Viewed Audit Logs", "audit_logs", 0, "Admin viewed audit logs page");
+// NOTE: Wala nay automatic log sa page access para dili mag-create og daghang logs
+// Ang logs kay para lang sa importanteng actions (add, edit, delete, toggle status)
 
 // GET FILTERS
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
@@ -161,15 +161,33 @@ $this_week = $conn->query("SELECT COUNT(*) as c FROM audit_logs WHERE WEEK(creat
 // ==================== GET NOTIFICATION COUNT - FIXED ====================
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
-if ($notif_check && $notif_check->num_rows) {
-    $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND status = 0");
-    $n->bind_param("i", $user_id);
-    $n->execute();
-    $result = $n->get_result();
-    if ($row = $result->fetch_assoc()) {
-        $notificationCount = $row['c'];
+if ($notif_check && $notif_check->num_rows > 0) {
+    // Check which column exists: is_read or status
+    $col_check = $conn->query("SHOW COLUMNS FROM notifications LIKE 'is_read'");
+    if ($col_check && $col_check->num_rows > 0) {
+        // Use is_read column
+        $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND is_read = 0");
+        $n->bind_param("i", $user_id);
+        $n->execute();
+        $result = $n->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $notificationCount = $row['c'];
+        }
+        $n->close();
+    } else {
+        // Fallback to status column
+        $col_check2 = $conn->query("SHOW COLUMNS FROM notifications LIKE 'status'");
+        if ($col_check2 && $col_check2->num_rows > 0) {
+            $n = $conn->prepare("SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND status = 0");
+            $n->bind_param("i", $user_id);
+            $n->execute();
+            $result = $n->get_result();
+            if ($row = $result->fetch_assoc()) {
+                $notificationCount = $row['c'];
+            }
+            $n->close();
+        }
     }
-    $n->close();
 }
 
 // DASHBOARDS FOR SIDEBAR
@@ -405,22 +423,22 @@ $conn->close();
                     </thead>
                     <tbody id="logsTableBody">
                         <?php if (empty($logs)): ?>
-                        <tr><td colspan="7" class="empty-state"><i class="fas fa-database"></i><p>No audit logs found</p></td></tr>
+                        <tr><td colspan="7" class="empty-state"><i class="fas fa-database"></i><p>No audit logs found</p></div><div class="empty-state"></div>
                         <?php else: ?>
                         <?php foreach ($logs as $log): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($log['user']) ?></strong></td>
-                            <td><span class="action-badge"><?= htmlspecialchars($log['action']) ?></span></td>
-                            <td><?= htmlspecialchars($log['table']) ?></td>
-                            <td><?= $log['record_id'] > 0 ? '#'.$log['record_id'] : '-' ?></td>
-                            <td><?= htmlspecialchars($log['description']) ?></td>
-                            <td><span class="ip-badge"><?= htmlspecialchars($log['ip_address']) ?></span></td>
-                            <td><?= $log['created_at'] ?></td>
-                        </tr>
+                            <td><span class="action-badge"><?= htmlspecialchars($log['action']) ?></span></div>
+                            <td><?= htmlspecialchars($log['table']) ?></div>
+                            <td><?= $log['record_id'] > 0 ? '#'.$log['record_id'] : '-' ?></div>
+                            <td><?= htmlspecialchars($log['description']) ?></div>
+                            <td><span class="ip-badge"><?= htmlspecialchars($log['ip_address']) ?></span></div>
+                            <td><?= $log['created_at'] ?></div>
+                        </div>
                         <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
-                </table>
+                </div>
             </div>
         </div>
     </main>

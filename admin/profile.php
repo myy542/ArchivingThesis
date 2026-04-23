@@ -5,8 +5,8 @@ include("../config/db.php");
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
-// LOGIN VALIDATION - CHECK IF USER IS LOGGED IN AND IS A DEAN
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'dean') {
+// LOGIN VALIDATION - CHECK IF USER IS LOGGED IN AND IS ADMIN
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: /ArchivingThesis/authentication/login.php");
     exit;
 }
@@ -17,7 +17,7 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
-// GET USER DATA FROM DATABASE - REMOVED created_at column
+// GET USER DATA FROM DATABASE
 $user_query = "SELECT user_id, username, email, first_name, last_name, role_id, status, contact_number, address, birth_date FROM user_table WHERE user_id = ?";
 $user_stmt = $conn->prepare($user_query);
 $user_stmt->bind_param("i", $user_id);
@@ -40,45 +40,54 @@ if ($user_data) {
     $user_status = $user_data['status'];
 }
 
-// GET DEPARTMENT INFO
-$department_id = isset($_GET['dept_id']) ? intval($_GET['dept_id']) : 1;
-$department_name = "College of Arts and Sciences";
-$department_code = "CAS";
+// Member since - default current date (since wala'y created_at)
+$user_created = date('F Y');
 
-$dept_query = "SELECT department_id, department_name, department_code FROM department_table WHERE department_id = ?";
-$dept_stmt = $conn->prepare($dept_query);
-$dept_stmt->bind_param("i", $department_id);
-$dept_stmt->execute();
-$dept_result = $dept_stmt->get_result();
-if ($dept_row = $dept_result->fetch_assoc()) {
-    $department_name = $dept_row['department_name'];
-    $department_code = $dept_row['department_code'];
-}
-$dept_stmt->close();
-
-// GET STATISTICS FOR DEAN
+// GET STATISTICS FOR ADMIN
 $stats = [];
 
-// Total projects reviewed (all theses)
-$projects_query = "SELECT COUNT(*) as count FROM thesis_table";
-$projects_result = $conn->query($projects_query);
-$stats['projects_reviewed'] = ($projects_result && $projects_result->num_rows > 0) ? ($projects_result->fetch_assoc())['count'] : 0;
+// Total users
+$total_users = $conn->query("SELECT COUNT(*) as c FROM user_table")->fetch_assoc()['c'];
+$active_users = $conn->query("SELECT COUNT(*) as c FROM user_table WHERE status = 'Active'")->fetch_assoc()['c'];
+$inactive_users = $total_users - $active_users;
 
-// Total theses approved (is_archived = 0 = active/pending)
-$approved_query = "SELECT COUNT(*) as count FROM thesis_table WHERE is_archived = 0";
-$approved_result = $conn->query($approved_query);
-$stats['theses_approved'] = ($approved_result && $approved_result->num_rows > 0) ? ($approved_result->fetch_assoc())['count'] : 0;
+// Total theses
+$theses_count = 0;
+$check_theses_table = $conn->query("SHOW TABLES LIKE 'thesis_table'");
+if ($check_theses_table && $check_theses_table->num_rows > 0) {
+    $theses_count = $conn->query("SELECT COUNT(*) as c FROM thesis_table")->fetch_assoc()['c'];
+}
 
-// Total faculty members
-$faculty_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 3 AND status = 'Active'";
-$faculty_result = $conn->query($faculty_query);
-$stats['faculty_supervised'] = ($faculty_result && $faculty_result->num_rows > 0) ? ($faculty_result->fetch_assoc())['count'] : 0;
+// Total departments
+$departments_count = 0;
+$check_dept_table = $conn->query("SHOW TABLES LIKE 'department_table'");
+if ($check_dept_table && $check_dept_table->num_rows > 0) {
+    $departments_count = $conn->query("SELECT COUNT(*) as c FROM department_table")->fetch_assoc()['c'];
+}
 
-// Years of experience - default 5 since wala'y created_at
-$stats['years_experience'] = 5;
+$stats = [
+    'total_users' => $total_users,
+    'active_users' => $active_users,
+    'inactive_users' => $inactive_users,
+    'total_theses' => $theses_count,
+    'total_departments' => $departments_count
+];
 
-// GET RECENT ACTIVITIES
+// GET RECENT ACTIVITIES - FIXED: removed created_at from user_table
 $recent_activities = [];
+
+// Get recent user registrations (using latest user_id as proxy for newest users since wala'y created_at)
+$user_activities = $conn->query("SELECT user_id, first_name, last_name FROM user_table ORDER BY user_id DESC LIMIT 3");
+if ($user_activities && $user_activities->num_rows > 0) {
+    while ($row = $user_activities->fetch_assoc()) {
+        $recent_activities[] = [
+            'icon' => 'user-plus',
+            'action' => 'New user registered',
+            'title' => $row['first_name'] . ' ' . $row['last_name'],
+            'date' => date('M d, Y') // current date since wala'y created_at
+        ];
+    }
+}
 
 // Get recent thesis submissions
 $thesis_activities = $conn->query("SELECT thesis_id, title, date_submitted FROM thesis_table ORDER BY date_submitted DESC LIMIT 3");
@@ -89,19 +98,6 @@ if ($thesis_activities && $thesis_activities->num_rows > 0) {
             'action' => 'New thesis submitted',
             'title' => substr($row['title'], 0, 50) . (strlen($row['title']) > 50 ? '...' : ''),
             'date' => date('M d, Y', strtotime($row['date_submitted']))
-        ];
-    }
-}
-
-// Get recent feedback/comments
-$feedback_activities = $conn->query("SELECT f.*, t.title FROM feedback_table f JOIN thesis_table t ON f.thesis_id = t.thesis_id ORDER BY f.feedback_date DESC LIMIT 2");
-if ($feedback_activities && $feedback_activities->num_rows > 0) {
-    while ($row = $feedback_activities->fetch_assoc()) {
-        $recent_activities[] = [
-            'icon' => 'comment',
-            'action' => 'New feedback',
-            'title' => substr($row['title'], 0, 50) . (strlen($row['title']) > 50 ? '...' : ''),
-            'date' => date('M d, Y', strtotime($row['feedback_date']))
         ];
     }
 }
@@ -129,10 +125,27 @@ if ($notif_check && $notif_check->num_rows > 0) {
     }
 }
 
-// Member since - default date since wala'y created_at
-$user_join_date = date('F Y'); // Current month and year
-$user_role = "Department Dean";
-$user_bio = "Experienced academic leader dedicated to promoting research excellence and innovation. Committed to fostering a collaborative environment for faculty and students.";
+// GET RECENT NOTIFICATIONS FOR DROPDOWN
+$recentNotifications = [];
+$notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, type, link, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
+$notif_list->bind_param("i", $user_id);
+$notif_list->execute();
+$notif_result = $notif_list->get_result();
+while ($row = $notif_result->fetch_assoc()) {
+    if ($row['thesis_id']) {
+        $thesis_q = $conn->prepare("SELECT title FROM thesis_table WHERE thesis_id = ?");
+        $thesis_q->bind_param("i", $row['thesis_id']);
+        $thesis_q->execute();
+        $thesis_title = $thesis_q->get_result()->fetch_assoc();
+        $row['thesis_title'] = $thesis_title['title'] ?? 'Unknown';
+        $thesis_q->close();
+    }
+    $recentNotifications[] = $row;
+}
+$notif_list->close();
+
+$user_role = "System Administrator";
+$user_bio = "Experienced system administrator responsible for managing the Thesis Archiving System. Ensures smooth operation, user management, and data integrity.";
 
 $pageTitle = "My Profile";
 ?>
@@ -250,6 +263,10 @@ $pageTitle = "My Profile";
             position: relative;
         }
 
+        .notification-container {
+            position: relative;
+        }
+
         .notification-icon {
             position: relative;
             cursor: pointer;
@@ -286,6 +303,118 @@ $pageTitle = "My Profile";
             align-items: center;
             justify-content: center;
             padding: 0 5px;
+        }
+
+        .notification-dropdown {
+            position: absolute;
+            top: 55px;
+            right: 0;
+            width: 380px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            display: none;
+            overflow: hidden;
+            z-index: 1000;
+            border: 1px solid #ffcdd2;
+            animation: fadeSlideDown 0.2s ease;
+        }
+
+        .notification-dropdown.show {
+            display: block;
+        }
+
+        @keyframes fadeSlideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .notification-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #fee2e2;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .notification-header h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #991b1b;
+        }
+
+        .notification-header a {
+            font-size: 0.7rem;
+            color: #dc2626;
+            text-decoration: none;
+        }
+
+        .notification-list {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .notification-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid #fef2f2;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .notification-item:hover {
+            background: #fef2f2;
+        }
+
+        .notification-item.unread {
+            background: #fff5f5;
+            border-left: 3px solid #dc2626;
+        }
+
+        .notification-item.empty {
+            justify-content: center;
+            color: #9ca3af;
+            cursor: default;
+        }
+
+        .notif-icon {
+            width: 36px;
+            height: 36px;
+            background: #fef2f2;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #dc2626;
+        }
+
+        .notif-content {
+            flex: 1;
+        }
+
+        .notif-message {
+            font-size: 0.8rem;
+            color: #1f2937;
+            margin-bottom: 4px;
+            line-height: 1.4;
+        }
+
+        .notif-time {
+            font-size: 0.65rem;
+            color: #9ca3af;
+        }
+
+        .notification-footer {
+            padding: 10px 16px;
+            border-top: 1px solid #fee2e2;
+            text-align: center;
+        }
+
+        .notification-footer a {
+            font-size: 0.75rem;
+            color: #dc2626;
+            text-decoration: none;
         }
 
         .profile-wrapper {
@@ -550,12 +679,6 @@ $pageTitle = "My Profile";
             margin-bottom: 5px;
         }
 
-        .user-department {
-            color: #6b7280;
-            font-size: 0.8rem;
-            margin-bottom: 20px;
-        }
-
         .profile-stats {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -583,7 +706,7 @@ $pageTitle = "My Profile";
             gap: 12px;
         }
 
-        .btn-edit, .btn-change-password {
+        .btn-edit {
             flex: 1;
             padding: 10px;
             border-radius: 30px;
@@ -592,11 +715,13 @@ $pageTitle = "My Profile";
             cursor: pointer;
             transition: all 0.3s;
             border: none;
-        }
-
-        .btn-edit {
             background: #dc2626;
             color: white;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn-edit:hover {
@@ -605,9 +730,22 @@ $pageTitle = "My Profile";
         }
 
         .btn-change-password {
+            flex: 1;
+            padding: 10px;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
             background: #fef2f2;
             color: #dc2626;
             border: 1px solid #fee2e2;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn-change-password:hover {
@@ -646,21 +784,6 @@ $pageTitle = "My Profile";
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-
-        .btn-icon {
-            background: none;
-            border: none;
-            color: #6b7280;
-            cursor: pointer;
-            padding: 6px;
-            border-radius: 6px;
-            transition: all 0.2s;
-        }
-
-        .btn-icon:hover {
-            background: #fef2f2;
-            color: #dc2626;
         }
 
         .info-row {
@@ -956,11 +1079,69 @@ $pageTitle = "My Profile";
             </div>
         </div>
         <div class="nav-right">
-            <div class="notification-icon">
-                <i class="far fa-bell"></i>
-                <?php if ($notificationCount > 0): ?>
-                    <span class="notification-badge"><?= $notificationCount ?></span>
-                <?php endif; ?>
+            <div class="notification-container">
+                <div class="notification-icon" id="notificationIcon">
+                    <i class="far fa-bell"></i>
+                    <?php if ($notificationCount > 0): ?>
+                        <span class="notification-badge" id="notificationBadge"><?= $notificationCount ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="notification-dropdown" id="notificationDropdown">
+                    <div class="notification-header">
+                        <h4>Notifications</h4>
+                        <?php if ($notificationCount > 0): ?>
+                            <a href="#" id="markAllReadBtn">Mark all as read</a>
+                        <?php endif; ?>
+                    </div>
+                    <div class="notification-list" id="notificationList">
+                        <?php if (empty($recentNotifications)): ?>
+                            <div class="notification-item empty">
+                                <div class="notif-icon"><i class="far fa-bell-slash"></i></div>
+                                <div class="notif-content">
+                                    <div class="notif-message">No notifications yet</div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($recentNotifications as $notif): ?>
+                                <div class="notification-item <?= $notif['is_read'] == 0 ? 'unread' : '' ?>" data-id="<?= $notif['notification_id'] ?>" data-link="<?= htmlspecialchars($notif['link'] ?? '#') ?>">
+                                    <div class="notif-icon">
+                                        <?php if(strpos($notif['message'], 'registration') !== false): ?>
+                                            <i class="fas fa-user-plus"></i>
+                                        <?php elseif(strpos($notif['message'], 'thesis') !== false): ?>
+                                            <i class="fas fa-file-alt"></i>
+                                        <?php elseif(strpos($notif['message'], 'approved') !== false): ?>
+                                            <i class="fas fa-check-circle"></i>
+                                        <?php elseif(strpos($notif['message'], 'rejected') !== false): ?>
+                                            <i class="fas fa-times-circle"></i>
+                                        <?php else: ?>
+                                            <i class="fas fa-bell"></i>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="notif-content">
+                                        <div class="notif-message"><?= htmlspecialchars($notif['message']) ?></div>
+                                        <div class="notif-time">
+                                            <i class="far fa-clock"></i> 
+                                            <?php 
+                                            $date = new DateTime($notif['created_at']);
+                                            $now = new DateTime();
+                                            $diff = $now->diff($date);
+                                            if($diff->days == 0) 
+                                                echo 'Today, ' . $date->format('h:i A');
+                                            elseif($diff->days == 1) 
+                                                echo 'Yesterday, ' . $date->format('h:i A');
+                                            else 
+                                                echo $date->format('M d, Y h:i A');
+                                            ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                    <div class="notification-footer">
+                        <a href="notifications.php">View all notifications <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                </div>
             </div>
             <div class="profile-wrapper" id="profileWrapper">
                 <div class="profile-trigger">
@@ -980,36 +1161,28 @@ $pageTitle = "My Profile";
     <aside class="sidebar" id="sidebar">
         <div class="logo-container">
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="logo-sub">DEPARTMENT DEAN</div>
+            <div class="logo-sub">ADMINISTRATOR</div>
         </div>
         <div class="nav-menu">
-            <a href="dean.php?section=dashboard" class="nav-item">
+            <a href="admindashboard.php" class="nav-item">
                 <i class="fas fa-th-large"></i>
                 <span>Dashboard</span>
             </a>
-            <a href="dean.php?section=department" class="nav-item">
-                <i class="fas fa-building"></i>
-                <span>Department</span>
+            <a href="users.php" class="nav-item">
+                <i class="fas fa-users"></i>
+                <span>Users</span>
             </a>
-            <a href="dean.php?section=faculty" class="nav-item">
-                <i class="fas fa-user-tie"></i>
-                <span>Faculty</span>
+            <a href="audit_logs.php" class="nav-item">
+                <i class="fas fa-history"></i>
+                <span>Audit Logs</span>
             </a>
-            <a href="dean.php?section=students" class="nav-item">
-                <i class="fas fa-user-graduate"></i>
-                <span>Students</span>
+            <a href="theses.php" class="nav-item">
+                <i class="fas fa-file-alt"></i>
+                <span>Theses</span>
             </a>
-            <a href="dean.php?section=projects" class="nav-item">
-                <i class="fas fa-project-diagram"></i>
-                <span>Projects</span>
-            </a>
-            <a href="dean.php?section=archive" class="nav-item">
-                <i class="fas fa-archive"></i>
-                <span>Archived</span>
-            </a>
-            <a href="dean.php?section=reports" class="nav-item">
-                <i class="fas fa-chart-bar"></i>
-                <span>Reports</span>
+            <a href="backup_management.php" class="nav-item">
+                <i class="fas fa-database"></i>
+                <span>Backup</span>
             </a>
         </div>
         <div class="nav-footer">
@@ -1029,7 +1202,7 @@ $pageTitle = "My Profile";
 
     <main class="main-content">
         <div class="page-header">
-            <h1><i class="fas fa-user-circle"></i> My Profile</h1>
+            <h1><i class="fas fa-user-cog"></i> My Profile</h1>
             <p>View and manage your personal information</p>
         </div>
 
@@ -1042,32 +1215,31 @@ $pageTitle = "My Profile";
                     </div>
                     <h2><?= htmlspecialchars($fullName) ?></h2>
                     <p class="user-role"><?= $user_role ?></p>
-                    <p class="user-department"><?= htmlspecialchars($department_name) ?></p>
                     
                     <div class="profile-stats">
                         <div class="stat-item">
-                            <div class="stat-value"><?= number_format($stats['projects_reviewed']) ?></div>
-                            <div class="stat-label">Projects Reviewed</div>
+                            <div class="stat-value"><?= number_format($stats['total_users']) ?></div>
+                            <div class="stat-label">Total Users</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value"><?= number_format($stats['theses_approved']) ?></div>
-                            <div class="stat-label">Theses Approved</div>
+                            <div class="stat-value"><?= number_format($stats['active_users']) ?></div>
+                            <div class="stat-label">Active Users</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value"><?= number_format($stats['faculty_supervised']) ?></div>
-                            <div class="stat-label">Faculty</div>
+                            <div class="stat-value"><?= number_format($stats['total_theses']) ?></div>
+                            <div class="stat-label">Total Theses</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-value"><?= number_format($stats['years_experience']) ?></div>
-                            <div class="stat-label">Years Exp.</div>
+                            <div class="stat-value"><?= number_format($stats['total_departments']) ?></div>
+                            <div class="stat-label">Departments</div>
                         </div>
                     </div>
                     
                     <div class="profile-actions">
-                        <button class="btn-edit" id="editProfileBtn">
+                        <a href="edit_profile.php" class="btn-edit">
                             <i class="fas fa-edit"></i> Edit Profile
-                        </button>
-                        <a href="change_password.php" class="btn-change-password" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;">
+                        </a>
+                        <a href="change_password.php" class="btn-change-password">
                             <i class="fas fa-key"></i> Change Password
                         </a>
                     </div>
@@ -1080,18 +1252,15 @@ $pageTitle = "My Profile";
                 <div class="info-card">
                     <div class="card-header">
                         <h3><i class="fas fa-user-circle"></i> Personal Information</h3>
-                        <button class="btn-icon" id="editPersonalBtn">
-                            <i class="fas fa-pen"></i>
-                        </button>
                     </div>
                     <div class="info-content">
                         <div class="info-row">
                             <span class="info-label">Full Name:</span>
-                            <span class="info-value" id="displayName"><?= htmlspecialchars($fullName) ?></span>
+                            <span class="info-value"><?= htmlspecialchars($fullName) ?></span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">Email Address:</span>
-                            <span class="info-value" id="displayEmail"><?= htmlspecialchars($user_email) ?></span>
+                            <span class="info-value"><?= htmlspecialchars($user_email) ?></span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">Username:</span>
@@ -1099,19 +1268,15 @@ $pageTitle = "My Profile";
                         </div>
                         <div class="info-row">
                             <span class="info-label">Phone Number:</span>
-                            <span class="info-value" id="displayPhone"><?= htmlspecialchars($user_phone) ?></span>
+                            <span class="info-value"><?= htmlspecialchars($user_phone) ?></span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">Address:</span>
-                            <span class="info-value" id="displayAddress"><?= htmlspecialchars($user_address) ?></span>
+                            <span class="info-value"><?= htmlspecialchars($user_address) ?></span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">Birth Date:</span>
-                            <span class="info-value" id="displayBirthDate"><?= $user_birth_date ? date('F d, Y', strtotime($user_birth_date)) : 'Not provided' ?></span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Department:</span>
-                            <span class="info-value"><?= htmlspecialchars($department_name) ?></span>
+                            <span class="info-value"><?= $user_birth_date ? date('F d, Y', strtotime($user_birth_date)) : 'Not provided' ?></span>
                         </div>
                         <div class="info-row">
                             <span class="info-label">Role:</span>
@@ -1123,7 +1288,7 @@ $pageTitle = "My Profile";
                         </div>
                         <div class="info-row">
                             <span class="info-label">Member Since:</span>
-                            <span class="info-value"><?= $user_join_date ?></span>
+                            <span class="info-value"><?= $user_created ?></span>
                         </div>
                     </div>
                 </div>
@@ -1132,12 +1297,9 @@ $pageTitle = "My Profile";
                 <div class="info-card">
                     <div class="card-header">
                         <h3><i class="fas fa-info-circle"></i> About Me</h3>
-                        <button class="btn-icon" id="editBioBtn">
-                            <i class="fas fa-pen"></i>
-                        </button>
                     </div>
                     <div class="info-content">
-                        <p class="bio-text" id="displayBio"><?= htmlspecialchars($user_bio) ?></p>
+                        <p class="bio-text"><?= htmlspecialchars($user_bio) ?></p>
                     </div>
                 </div>
 
@@ -1145,7 +1307,7 @@ $pageTitle = "My Profile";
                 <div class="info-card">
                     <div class="card-header">
                         <h3><i class="fas fa-history"></i> Recent Activity</h3>
-                        <a href="#" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
+                        <a href="audit_logs.php" class="view-all">View All <i class="fas fa-arrow-right"></i></a>
                     </div>
                     <div class="activity-list">
                         <?php foreach ($recent_activities as $activity): ?>
@@ -1166,48 +1328,6 @@ $pageTitle = "My Profile";
         </div>
     </main>
 
-    <!-- Edit Profile Modal -->
-    <div class="modal" id="editProfileModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Edit Profile</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="editProfileForm" method="POST" action="update_profile.php">
-                    <div class="form-group">
-                        <label>Full Name</label>
-                        <input type="text" id="editName" name="full_name" value="<?= htmlspecialchars($fullName) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" id="editEmail" name="email" value="<?= htmlspecialchars($user_email) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Phone Number</label>
-                        <input type="tel" id="editPhone" name="contact_number" value="<?= htmlspecialchars($user_phone) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Address</label>
-                        <input type="text" id="editAddress" name="address" value="<?= htmlspecialchars($user_address) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Birth Date</label>
-                        <input type="date" id="editBirthDate" name="birth_date" value="<?= htmlspecialchars($user_birth_date) ?>">
-                    </div>
-                    <div class="form-group">
-                        <label>Bio</label>
-                        <textarea id="editBio" name="bio" rows="4"><?= htmlspecialchars($user_bio) ?></textarea>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-cancel">Cancel</button>
-                <button class="btn-save" onclick="saveProfile()">Save Changes</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         // DOM Elements
         const hamburgerBtn = document.getElementById('hamburgerBtn');
@@ -1216,15 +1336,12 @@ $pageTitle = "My Profile";
         const profileWrapper = document.getElementById('profileWrapper');
         const profileDropdown = document.getElementById('profileDropdown');
         const darkModeToggle = document.getElementById('darkmode');
-        
-        // Modal Elements
-        const editProfileModal = document.getElementById('editProfileModal');
-        const editProfileBtn = document.getElementById('editProfileBtn');
-        const editPersonalBtn = document.getElementById('editPersonalBtn');
-        const editBioBtn = document.getElementById('editBioBtn');
-        const modalCloseBtns = document.querySelectorAll('.modal-close');
-        const cancelBtns = document.querySelectorAll('.btn-cancel');
-        
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationDropdown = document.getElementById('notificationDropdown');
+        const notificationBadge = document.getElementById('notificationBadge');
+        const notificationList = document.getElementById('notificationList');
+        const markAllReadBtn = document.getElementById('markAllReadBtn');
+
         // Sidebar Functions
         function openSidebar() {
             sidebar.classList.add('open');
@@ -1254,7 +1371,7 @@ $pageTitle = "My Profile";
             if (e.key === 'Escape') {
                 if (sidebar.classList.contains('open')) closeSidebar();
                 if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
-                if (editProfileModal && editProfileModal.classList.contains('show')) closeModal();
+                if (notificationDropdown && notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show');
             }
         });
 
@@ -1266,6 +1383,7 @@ $pageTitle = "My Profile";
         function toggleProfileDropdown(e) {
             e.stopPropagation();
             profileDropdown.classList.toggle('show');
+            if (notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show');
         }
 
         function closeProfileDropdown(e) {
@@ -1277,6 +1395,103 @@ $pageTitle = "My Profile";
         if (profileWrapper) {
             profileWrapper.addEventListener('click', toggleProfileDropdown);
             document.addEventListener('click', closeProfileDropdown);
+        }
+
+        // Notification Dropdown
+        function toggleNotificationDropdown(e) {
+            e.stopPropagation();
+            notificationDropdown.classList.toggle('show');
+            if (profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+        }
+
+        function closeNotificationDropdown(e) {
+            if (notificationIcon && !notificationIcon.contains(e.target) && notificationDropdown && !notificationDropdown.contains(e.target)) {
+                notificationDropdown.classList.remove('show');
+            }
+        }
+
+        if (notificationIcon) {
+            notificationIcon.addEventListener('click', toggleNotificationDropdown);
+            document.addEventListener('click', closeNotificationDropdown);
+        }
+
+        // Mark notification as read
+        function markNotificationAsRead(notifId, element) {
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'mark_read=1&notif_id=' + notifId
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    element.classList.remove('unread');
+                    if (notificationBadge) {
+                        let c = parseInt(notificationBadge.textContent);
+                        if (c > 0) {
+                            c--;
+                            if (c === 0) {
+                                notificationBadge.style.display = 'none';
+                            } else {
+                                notificationBadge.textContent = c;
+                            }
+                        }
+                    }
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        // Mark all as read
+        function markAllAsRead() {
+            fetch(window.location.href, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'mark_all_read=1'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.querySelectorAll('.notification-item.unread').forEach(item => {
+                        item.classList.remove('unread');
+                    });
+                    if (notificationBadge) {
+                        notificationBadge.style.display = 'none';
+                    }
+                    if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        if (notificationList) {
+            notificationList.addEventListener('click', function(e) {
+                const notificationItem = e.target.closest('.notification-item');
+                if (notificationItem && !notificationItem.classList.contains('empty')) {
+                    const notifId = notificationItem.dataset.id;
+                    const link = notificationItem.dataset.link;
+                    if (notifId && notificationItem.classList.contains('unread')) {
+                        markNotificationAsRead(notifId, notificationItem);
+                    }
+                    if (link && link !== '#') {
+                        setTimeout(() => {
+                            window.location.href = link;
+                        }, 300);
+                    }
+                }
+            });
+        }
+
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                markAllAsRead();
+            });
+        }
+
+        if (notificationBadge && notificationBadge.textContent === '') {
+            notificationBadge.style.display = 'none';
         }
 
         // Dark Mode
@@ -1299,69 +1514,8 @@ $pageTitle = "My Profile";
             }
         }
 
-        // Modal Functions
-        function openModal() {
-            editProfileModal.classList.add('show');
-        }
-
-        function closeModal() {
-            editProfileModal.classList.remove('show');
-        }
-
-        function saveProfile() {
-            const form = document.getElementById('editProfileForm');
-            const formData = new FormData(form);
-            
-            fetch('update_profile.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Update display values
-                    document.getElementById('displayName').textContent = document.getElementById('editName').value;
-                    document.getElementById('displayEmail').textContent = document.getElementById('editEmail').value;
-                    document.getElementById('displayPhone').textContent = document.getElementById('editPhone').value;
-                    document.getElementById('displayAddress').textContent = document.getElementById('editAddress').value;
-                    document.getElementById('displayBio').textContent = document.getElementById('editBio').value;
-                    
-                    // Update profile card name
-                    document.querySelector('.profile-card h2').textContent = document.getElementById('editName').value;
-                    
-                    // Update top bar name
-                    document.querySelector('.profile-name').textContent = document.getElementById('editName').value;
-                    
-                    alert('Profile updated successfully!');
-                    closeModal();
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to update profile');
-            });
-        }
-
-        // Event listeners for modals
-        if (editProfileBtn) editProfileBtn.addEventListener('click', openModal);
-        if (editPersonalBtn) editPersonalBtn.addEventListener('click', openModal);
-        if (editBioBtn) editBioBtn.addEventListener('click', openModal);
-        
-        modalCloseBtns.forEach(btn => btn.addEventListener('click', closeModal));
-        cancelBtns.forEach(btn => btn.addEventListener('click', closeModal));
-        
-        // Close modal when clicking outside
-        window.addEventListener('click', function(e) {
-            if (e.target === editProfileModal) {
-                closeModal();
-            }
-        });
-
-        // Initialize
         initDarkMode();
-        console.log('Dean Profile Page Initialized');
+        console.log('Admin Profile Page Initialized');
     </script>
 </body>
 </html>

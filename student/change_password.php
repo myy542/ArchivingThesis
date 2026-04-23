@@ -44,18 +44,15 @@ if ($first && $last) {
 
 $email = trim($user["email"] ?? "");
 
-// Get notification count
+// Get notification count - FIXED using is_read
 $notificationCount = 0;
-$check_table = $conn->query("SHOW TABLES LIKE 'notification_table'");
-if ($check_table && $check_table->num_rows > 0) {
-    $notif_query = "SELECT COUNT(*) as total FROM notification_table WHERE user_id = ? AND status != 'read'";
-    $notif_stmt = $conn->prepare($notif_query);
-    $notif_stmt->bind_param("i", $user_id);
-    $notif_stmt->execute();
-    $notifResult = $notif_stmt->get_result()->fetch_assoc();
-    $notificationCount = $notifResult['total'] ?? 0;
-    $notif_stmt->close();
-}
+$notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0";
+$notif_stmt = $conn->prepare($notif_query);
+$notif_stmt->bind_param("i", $user_id);
+$notif_stmt->execute();
+$notifResult = $notif_stmt->get_result()->fetch_assoc();
+$notificationCount = $notifResult['total'] ?? 0;
+$notif_stmt->close();
 
 // Handle password change
 $success_message = '';

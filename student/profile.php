@@ -11,7 +11,7 @@ if (!isset($_SESSION["user_id"])) {
 
 $user_id = (int)$_SESSION["user_id"];
 
-// Get user data
+// Get user data - using the correct table name 'user_table'
 $stmt = $conn->prepare("
     SELECT first_name, last_name, email, contact_number, address, birth_date, profile_picture
     FROM user_table
@@ -50,18 +50,15 @@ $contact = trim($user["contact_number"] ?? "");
 $address = trim($user["address"] ?? "");
 $birth   = trim($user["birth_date"] ?? "");
 
-// Get notification count
+// Get notification count - FIXED using is_read
 $notificationCount = 0;
-$check_table = $conn->query("SHOW TABLES LIKE 'notification_table'");
-if ($check_table && $check_table->num_rows > 0) {
-    $notif_query = "SELECT COUNT(*) as total FROM notification_table WHERE user_id = ? AND status != 'read'";
-    $notif_stmt = $conn->prepare($notif_query);
-    $notif_stmt->bind_param("i", $user_id);
-    $notif_stmt->execute();
-    $notifResult = $notif_stmt->get_result()->fetch_assoc();
-    $notificationCount = $notifResult['total'] ?? 0;
-    $notif_stmt->close();
-}
+$notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0";
+$notif_stmt = $conn->prepare($notif_query);
+$notif_stmt->bind_param("i", $user_id);
+$notif_stmt->execute();
+$notifResult = $notif_stmt->get_result()->fetch_assoc();
+$notificationCount = $notifResult['total'] ?? 0;
+$notif_stmt->close();
 
 $pageTitle = "My Profile";
 $currentPage = basename($_SERVER['PHP_SELF']);

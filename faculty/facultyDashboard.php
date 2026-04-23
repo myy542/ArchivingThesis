@@ -24,7 +24,7 @@ if (isset($_POST['forward_to_dean']) && isset($_POST['thesis_id'])) {
     $thesis_id = intval($_POST['thesis_id']);
     $thesis_title = $_POST['thesis_title'] ?? '';
     
-    $updateQuery = "UPDATE thesis_table SET status = 'Forwarded_to_dean', forwarded_to_dean_at = NOW() WHERE thesis_id = ?";
+    $updateQuery = "UPDATE thesis_table SET thesis_status = 'Forwarded_to_dean', forwarded_to_dean_at = NOW() WHERE thesis_id = ?";
     $stmt = $conn->prepare($updateQuery);
     $stmt->bind_param("i", $thesis_id);
     
@@ -70,7 +70,7 @@ if (isset($_POST['approve_thesis']) && isset($_POST['thesis_id'])) {
     
     $thesis_id = intval($_POST['thesis_id']);
     
-    $updateQuery = "UPDATE thesis_table SET status = 'approved', approved_at = NOW() WHERE thesis_id = ?";
+    $updateQuery = "UPDATE thesis_table SET thesis_status = 'approved', approved_at = NOW() WHERE thesis_id = ?";
     $stmt = $conn->prepare($updateQuery);
     $stmt->bind_param("i", $thesis_id);
     
@@ -90,7 +90,7 @@ if (isset($_POST['reject_thesis']) && isset($_POST['thesis_id'])) {
     $thesis_id = intval($_POST['thesis_id']);
     $reason = $_POST['reason'] ?? '';
     
-    $updateQuery = "UPDATE thesis_table SET status = 'rejected', rejection_reason = ?, rejected_at = NOW() WHERE thesis_id = ?";
+    $updateQuery = "UPDATE thesis_table SET thesis_status = 'rejected', rejection_reason = ?, rejected_at = NOW() WHERE thesis_id = ?";
     $stmt = $conn->prepare($updateQuery);
     $stmt->bind_param("si", $reason, $thesis_id);
     
@@ -183,7 +183,7 @@ while ($row = $notif_list_result->fetch_assoc()) {
 }
 $notif_list_stmt->close();
 
-// GET STATISTICS
+// ==================== GET STATISTICS - FIXED: Use thesis_status column ====================
 $pendingCount = 0;
 $approvedCount = 0;
 $rejectedCount = 0;
@@ -200,14 +200,29 @@ for ($i = 6; $i >= 0; $i--) {
 
 $table_check = $conn->query("SHOW TABLES LIKE 'thesis_table'");
 if ($table_check && $table_check->num_rows > 0) {
-    $countsQuery = "SELECT 
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
-        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected,
-        SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) as archived,
-        SUM(CASE WHEN status = 'Forwarded_to_dean' THEN 1 ELSE 0 END) as forwarded,
-        COUNT(*) as total
-    FROM thesis_table";
+    // Check if thesis_status column exists, if not use is_archived logic
+    $col_check = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'thesis_status'");
+    if ($col_check && $col_check->num_rows > 0) {
+        // Use thesis_status column
+        $countsQuery = "SELECT 
+            SUM(CASE WHEN thesis_status = 'pending' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN thesis_status = 'approved' THEN 1 ELSE 0 END) as approved,
+            SUM(CASE WHEN thesis_status = 'rejected' THEN 1 ELSE 0 END) as rejected,
+            SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived,
+            SUM(CASE WHEN thesis_status = 'Forwarded_to_dean' THEN 1 ELSE 0 END) as forwarded,
+            COUNT(*) as total
+        FROM thesis_table";
+    } else {
+        // Use is_archived logic - pending if not archived, archived if is_archived=1
+        $countsQuery = "SELECT 
+            SUM(CASE WHEN is_archived = 0 THEN 1 ELSE 0 END) as pending,
+            0 as approved,
+            0 as rejected,
+            SUM(CASE WHEN is_archived = 1 THEN 1 ELSE 0 END) as archived,
+            0 as forwarded,
+            COUNT(*) as total
+        FROM thesis_table";
+    }
     
     $countsResult = $conn->query($countsQuery);
     if ($countsResult) {
@@ -220,15 +235,29 @@ if ($table_check && $table_check->num_rows > 0) {
         $totalCount = $counts['total'] ?? 0;
     }
     
-    $monthlyQuery = "SELECT 
-        DATE_FORMAT(date_submitted, '%b %Y') as month,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
-        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
-    FROM thesis_table 
-    WHERE date_submitted >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-    GROUP BY DATE_FORMAT(date_submitted, '%b %Y')
-    ORDER BY MIN(date_submitted) ASC";
+    // Monthly query - FIXED
+    $col_check2 = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'thesis_status'");
+    if ($col_check2 && $col_check2->num_rows > 0) {
+        $monthlyQuery = "SELECT 
+            DATE_FORMAT(date_submitted, '%b %Y') as month,
+            SUM(CASE WHEN thesis_status = 'pending' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN thesis_status = 'approved' THEN 1 ELSE 0 END) as approved,
+            SUM(CASE WHEN thesis_status = 'rejected' THEN 1 ELSE 0 END) as rejected
+        FROM thesis_table 
+        WHERE date_submitted >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(date_submitted, '%b %Y')
+        ORDER BY MIN(date_submitted) ASC";
+    } else {
+        $monthlyQuery = "SELECT 
+            DATE_FORMAT(date_submitted, '%b %Y') as month,
+            SUM(CASE WHEN is_archived = 0 THEN 1 ELSE 0 END) as pending,
+            0 as approved,
+            0 as rejected
+        FROM thesis_table 
+        WHERE date_submitted >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(date_submitted, '%b %Y')
+        ORDER BY MIN(date_submitted) ASC";
+    }
     
     $monthlyResult = $conn->query($monthlyQuery);
     if ($monthlyResult) {
@@ -242,42 +271,92 @@ if ($table_check && $table_check->num_rows > 0) {
     }
 }
 
-// GET PENDING THESES
+// GET PENDING THESES - FIXED
 $pendingTheses = [];
-$query = "SELECT t.*, u.first_name, u.last_name, u.email 
-          FROM thesis_table t
-          JOIN user_table u ON t.student_id = u.user_id
-          WHERE t.status = 'pending'
-          ORDER BY t.date_submitted DESC 
-          LIMIT 10";
+$col_check3 = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'thesis_status'");
+if ($col_check3 && $col_check3->num_rows > 0) {
+    $query = "SELECT t.*, u.first_name, u.last_name, u.email 
+              FROM thesis_table t
+              JOIN user_table u ON t.student_id = u.user_id
+              WHERE t.thesis_status = 'pending'
+              ORDER BY t.date_submitted DESC 
+              LIMIT 10";
+} else {
+    $query = "SELECT t.*, u.first_name, u.last_name, u.email 
+              FROM thesis_table t
+              JOIN user_table u ON t.student_id = u.user_id
+              WHERE t.is_archived = 0
+              ORDER BY t.date_submitted DESC 
+              LIMIT 10";
+}
 $result = $conn->query($query);
 if ($result) {
     while ($row = $result->fetch_assoc()) {
+        // Add status field for display
+        if (!isset($row['thesis_status'])) {
+            $row['thesis_status'] = $row['is_archived'] == 0 ? 'pending' : 'archived';
+        }
         $pendingTheses[] = $row;
     }
 }
 
-// GET ALL SUBMISSIONS
+// GET ALL SUBMISSIONS - FIXED
 $allSubmissions = [];
 $currentFilter = isset($_GET['status']) ? $_GET['status'] : 'all';
 
-$sql = "SELECT 
-        t.*, 
-        u.first_name, 
-        u.last_name, 
-        u.email
-        FROM thesis_table t
-        JOIN user_table u ON t.student_id = u.user_id";
+$col_check4 = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'thesis_status'");
+if ($col_check4 && $col_check4->num_rows > 0) {
+    $sql = "SELECT 
+            t.*, 
+            u.first_name, 
+            u.last_name, 
+            u.email
+            FROM thesis_table t
+            JOIN user_table u ON t.student_id = u.user_id";
 
-if ($currentFilter != 'all') {
-    $sql .= " WHERE t.status = '" . $conn->real_escape_string($currentFilter) . "'";
+    if ($currentFilter != 'all') {
+        if ($currentFilter == 'archived') {
+            $sql .= " WHERE t.is_archived = 1";
+        } else {
+            $sql .= " WHERE t.thesis_status = '" . $conn->real_escape_string($currentFilter) . "'";
+        }
+    }
+
+    $sql .= " ORDER BY t.date_submitted DESC";
+} else {
+    $sql = "SELECT 
+            t.*, 
+            u.first_name, 
+            u.last_name, 
+            u.email
+            FROM thesis_table t
+            JOIN user_table u ON t.student_id = u.user_id";
+
+    if ($currentFilter != 'all') {
+        if ($currentFilter == 'archived') {
+            $sql .= " WHERE t.is_archived = 1";
+        } elseif ($currentFilter == 'pending') {
+            $sql .= " WHERE t.is_archived = 0";
+        } else {
+            // For approved/rejected - wala tay column, so display all non-archived
+            $sql .= " WHERE t.is_archived = 0";
+        }
+    }
+
+    $sql .= " ORDER BY t.date_submitted DESC";
 }
-
-$sql .= " ORDER BY t.date_submitted DESC";
 
 $result = $conn->query($sql);
 if ($result) {
     while ($row = $result->fetch_assoc()) {
+        // Add status field for display
+        if (!isset($row['thesis_status'])) {
+            if ($row['is_archived'] == 1) {
+                $row['thesis_status'] = 'archived';
+            } else {
+                $row['thesis_status'] = 'pending';
+            }
+        }
         $allSubmissions[] = $row;
     }
 }
@@ -295,7 +374,6 @@ $pageTitle = "Faculty Dashboard";
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
-        /* Your existing CSS - keep it the same */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
         body.dark-mode { background: #1a1a1a; color: #e0e0e0; }
@@ -575,7 +653,7 @@ $pageTitle = "Faculty Dashboard";
             </div>
         </div>
 
-        <!-- Pending Theses Section - UPDATED: Review button only -->
+        <!-- Pending Theses Section -->
         <div class="theses-card">
             <div class="card-header">
                 <h3><i class="fas fa-clock"></i> Theses Waiting for Review</h3>
@@ -616,6 +694,7 @@ $pageTitle = "Faculty Dashboard";
                     <a href="?status=pending" class="filter-btn <?= $currentFilter == 'pending' ? 'active' : '' ?>">Pending (<?= $pendingCount ?>)</a>
                     <a href="?status=approved" class="filter-btn <?= $currentFilter == 'approved' ? 'active' : '' ?>">Approved (<?= $approvedCount ?>)</a>
                     <a href="?status=rejected" class="filter-btn <?= $currentFilter == 'rejected' ? 'active' : '' ?>">Rejected (<?= $rejectedCount ?>)</a>
+                    <a href="?status=archived" class="filter-btn <?= $currentFilter == 'archived' ? 'active' : '' ?>">Archived (<?= $archivedCount ?>)</a>
                     <a href="?status=Forwarded_to_dean" class="filter-btn <?= $currentFilter == 'Forwarded_to_dean' ? 'active' : '' ?>">Forwarded (<?= $forwardedCount ?>)</a>
                 </div>
             </div>
@@ -633,15 +712,28 @@ $pageTitle = "Faculty Dashboard";
                                 <td><strong><?= htmlspecialchars(substr($submission['title'], 0, 50)) . (strlen($submission['title']) > 50 ? '...' : '') ?></strong></td>
                                 <td><?= htmlspecialchars($submission['first_name'] . ' ' . $submission['last_name']) ?></td>
                                 <td><?= date('M d, Y', strtotime($submission['date_submitted'])) ?></td>
-                                <td><span class="status-badge <?= strtolower($submission['status']) ?>"><?= $submission['status'] == 'Forwarded_to_dean' ? 'Forwarded to Dean' : ucfirst($submission['status']) ?></span></td>
                                 <td>
-                                    <?php if ($submission['status'] == 'pending'): ?>
+                                    <span class="status-badge <?= isset($submission['thesis_status']) ? strtolower($submission['thesis_status']) : 'pending' ?>">
+                                        <?php 
+                                            if (isset($submission['thesis_status'])) {
+                                                echo $submission['thesis_status'] == 'Forwarded_to_dean' ? 'Forwarded to Dean' : ucfirst($submission['thesis_status']);
+                                            } else {
+                                                echo $submission['is_archived'] == 1 ? 'Archived' : 'Pending';
+                                            }
+                                        ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php 
+                                        $status = isset($submission['thesis_status']) ? $submission['thesis_status'] : ($submission['is_archived'] == 1 ? 'archived' : 'pending');
+                                    ?>
+                                    <?php if ($status == 'pending'): ?>
                                         <a href="reviewThesis.php?id=<?= $submission['thesis_id'] ?>" class="btn-review-small"><i class="fas fa-check-circle"></i> Review</a>
                                     <?php else: ?>
                                         <a href="reviewThesis.php?id=<?= $submission['thesis_id'] ?>" class="btn-view-small"><i class="fas fa-eye"></i> View</a>
                                     <?php endif; ?>
-                                </td>
-                            </tr>
+                                 </td>
+                             </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
@@ -702,19 +794,6 @@ $pageTitle = "Faculty Dashboard";
                     interaction: { mode: 'nearest', axis: 'x', intersect: false }
                 }
             });
-        }
-
-        // Keep the functions but they won't be used (no buttons calling them)
-        function forwardToDean(thesisId, thesisTitle) {
-            // Function kept but no button uses it
-        }
-
-        function approveThesis(thesisId) {
-            // Function kept but no button uses it
-        }
-
-        function rejectThesis(thesisId) {
-            // Function kept but no button uses it
         }
 
         function showToast(message, type = 'success') {

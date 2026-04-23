@@ -29,24 +29,31 @@ if ($check_thesis && $check_thesis->num_rows > 0) {
     $thesis_table_exists = true;
 }
 
-// Get forwarded theses from database (status = 'forwarded_to_dean')
+// ==================== GET FORWARDED THESES - FIXED: No status column ====================
+// Since wala'y status column, we get all theses (pending/active)
+// For coordinator, forwarded means theses that are pending (not archived)
 $forwardedTheses = [];
 if ($thesis_table_exists) {
-    $theses_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted 
+    // Get all active theses (is_archived = 0 or NULL)
+    $theses_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived 
                      FROM thesis_table 
-                     WHERE status = 'forwarded_to_dean'
+                     WHERE (is_archived = 0 OR is_archived IS NULL)
                      ORDER BY date_submitted DESC";
     $theses_result = $conn->query($theses_query);
     
     if ($theses_result && $theses_result->num_rows > 0) {
         while ($row = $theses_result->fetch_assoc()) {
-            $status = $row['status'];
-            $status_display = $status;
+            $is_archived = $row['is_archived'] ?? 0;
             
-            if ($status == 'forwarded_to_dean') {
-                $status_display = 'Under Review';
+            // Determine status based on is_archived
+            if ($is_archived == 1) {
+                $status = 'Archived';
+                $status_class = 'archived';
+                $status_icon = 'fa-archive';
             } else {
-                $status_display = 'Pending';
+                $status = 'Under Review';
+                $status_class = 'under-review';
+                $status_icon = 'fa-spinner';
             }
             
             $forwardedTheses[] = [
@@ -56,12 +63,23 @@ if ($thesis_table_exists) {
                 'department' => $row['department'] ?? 'Unknown',
                 'year' => $row['year'] ?? 'N/A',
                 'date_forwarded' => $row['date_submitted'],
-                'status' => $status_display,
-                'raw_status' => $row['status']
+                'status' => $status,
+                'status_class' => $status_class,
+                'status_icon' => $status_icon,
+                'raw_is_archived' => $is_archived
             ];
         }
     }
 }
+
+// Count statistics
+$totalForwarded = count($forwardedTheses);
+$pendingCount = count(array_filter($forwardedTheses, function($t) { 
+    return $t['status'] == 'Under Review'; 
+}));
+$approvedCount = count(array_filter($forwardedTheses, function($t) { 
+    return $t['status'] == 'Archived'; 
+}));
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
@@ -593,6 +611,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             color: #059669;
         }
 
+        .status-archived {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
         /* Action Buttons */
         .action-buttons {
             display: flex;
@@ -851,22 +874,22 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="stat-card">
                 <div class="stat-icon"><i class="fas fa-arrow-right"></i></div>
                 <div class="stat-content">
-                    <h3><?= count($forwardedTheses) ?></h3>
-                    <p>Forwarded to Dean</p>
+                    <h3><?= $totalForwarded ?></h3>
+                    <p>Total Theses</p>
                 </div>
             </div>
             <div class="stat-card">
                 <div class="stat-icon"><i class="fas fa-clock"></i></div>
                 <div class="stat-content">
-                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Under Review' || $t['status'] == 'Pending'; })) ?></h3>
-                    <p>Pending Review</p>
+                    <h3><?= $pendingCount ?></h3>
+                    <p>Under Review</p>
                 </div>
             </div>
             <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-icon"><i class="fas fa-archive"></i></div>
                 <div class="stat-content">
-                    <h3><?= count(array_filter($forwardedTheses, function($t) { return $t['status'] == 'Approved'; })) ?></h3>
-                    <p>Approved</p>
+                    <h3><?= $approvedCount ?></h3>
+                    <p>Archived</p>
                 </div>
             </div>
         </div>
@@ -874,9 +897,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <!-- Filter Tabs -->
         <div class="filter-tabs">
             <button class="filter-btn active" data-filter="all">All</button>
-            <button class="filter-btn" data-filter="pending">Pending</button>
             <button class="filter-btn" data-filter="under-review">Under Review</button>
-            <button class="filter-btn" data-filter="approved">Approved</button>
+            <button class="filter-btn" data-filter="archived">Archived</button>
         </div>
 
         <!-- Table List -->
@@ -884,7 +906,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <?php if (empty($forwardedTheses)): ?>
                 <div class="empty-state">
                     <i class="fas fa-inbox"></i>
-                    <p>No theses forwarded to dean yet.</p>
+                    <p>No theses found.</p>
                 </div>
             <?php else: ?>
                 <table class="forwarded-table" id="thesesTable">
@@ -892,33 +914,20 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         <tr>
                             <th>Thesis Title</th>
                             <th>Author (Adviser)</th>
-                            <th>Date Forwarded</th>
+                            <th>Date Submitted</th>
                             <th>Status</th>
                             <th>Action</th>
-                        </thead>
+                        </tr>
+                    </thead>
                     <tbody>
                         <?php foreach ($forwardedTheses as $thesis): ?>
-                            <?php 
-                                $status_class = 'pending';
-                                $status_icon = 'fa-clock';
-                                if ($thesis['status'] == 'Approved') {
-                                    $status_class = 'approved';
-                                    $status_icon = 'fa-check-circle';
-                                } elseif ($thesis['status'] == 'Under Review') {
-                                    $status_class = 'under-review';
-                                    $status_icon = 'fa-spinner';
-                                } else {
-                                    $status_class = 'pending';
-                                    $status_icon = 'fa-clock';
-                                }
-                            ?>
-                            <tr data-status="<?= $status_class ?>">
+                            <tr data-status="<?= $thesis['status_class'] ?>">
                                 <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
                                 <td><?= htmlspecialchars($thesis['author']) ?></td>
                                 <td><?= date('M d, Y', strtotime($thesis['date_forwarded'])) ?></td>
                                 <td>
-                                    <span class="status-badge status-<?= $status_class ?>">
-                                        <i class="fas <?= $status_icon ?>"></i>
+                                    <span class="status-badge status-<?= $thesis['status_class'] ?>">
+                                        <i class="fas <?= $thesis['status_icon'] ?>"></i>
                                         <?= $thesis['status'] ?>
                                     </span>
                                 </td>
@@ -926,11 +935,11 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                                     <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
                                         <i class="fas fa-eye"></i> View
                                     </a>
-                                 </td>
-                             </tr>
+                                 </span>
+                             </td>
                         <?php endforeach; ?>
                     </tbody>
-                 </table>
+                </table>
             <?php endif; ?>
         </div>
     </main>
@@ -1059,7 +1068,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         // ==================== INITIALIZE ====================
         initDarkMode();
         
-        console.log('Forwarded Theses Page Initialized - Using thesis_table');
+        console.log('Forwarded Theses Page Initialized - Using is_archived column');
     </script>
 </body>
 </html>

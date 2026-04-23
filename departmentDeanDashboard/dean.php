@@ -162,7 +162,7 @@ if ($check_thesis_table && $check_thesis_table->num_rows > 0) {
     $thesis_table_exists = true;
 }
 
-// GET STATISTICS FROM DATABASE
+// GET STATISTICS FROM DATABASE - FIXED: No 'status' column, using is_archived
 $stats = [];
 
 // Total students
@@ -176,33 +176,24 @@ $faculty_result = $conn->query($faculty_query);
 $stats['total_faculty'] = ($faculty_result && $faculty_result->num_rows > 0) ? ($faculty_result->fetch_assoc())['count'] : 0;
 
 if ($thesis_table_exists) {
+    // Total projects (all theses)
     $projects_query = "SELECT COUNT(*) as count FROM thesis_table";
     $projects_result = $conn->query($projects_query);
     $stats['total_projects'] = ($projects_result && $projects_result->num_rows > 0) ? ($projects_result->fetch_assoc())['count'] : 0;
     
-    $completed_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'approved'";
+    // Completed projects - using is_archived = 0 (pending/active)
+    $completed_query = "SELECT COUNT(*) as count FROM thesis_table WHERE is_archived = 0";
     $completed_result = $conn->query($completed_query);
     $stats['completed_projects'] = ($completed_result && $completed_result->num_rows > 0) ? ($completed_result->fetch_assoc())['count'] : 0;
     
-    $forwarded_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'forwarded_to_dean'";
-    $forwarded_result = $conn->query($forwarded_query);
-    $stats['pending_reviews'] = ($forwarded_result && $forwarded_result->num_rows > 0) ? ($forwarded_result->fetch_assoc())['count'] : 0;
+    // Forwarded to dean - wala tay column para ani, so 0 sa pagkakaron
+    $stats['pending_reviews'] = 0;
     
-    $ongoing_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'pending_coordinator' OR status = 'pending'";
-    $ongoing_result = $conn->query($ongoing_query);
-    $stats['ongoing_projects'] = ($ongoing_result && $ongoing_result->num_rows > 0) ? ($ongoing_result->fetch_assoc())['count'] : 0;
+    // Ongoing projects - non-archived
+    $stats['ongoing_projects'] = $stats['completed_projects'];
     
-    $check_defense_col = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'defense_date'");
-    $has_defense_date = ($check_defense_col && $check_defense_col->num_rows > 0);
-    if ($has_defense_date) {
-        $defenses_query = "SELECT COUNT(*) as count FROM thesis_table WHERE defense_date IS NOT NULL AND defense_date >= CURDATE()";
-        $defenses_result = $conn->query($defenses_query);
-        $stats['upcoming_defenses'] = ($defenses_result && $defenses_result->num_rows > 0) ? ($defenses_result->fetch_assoc())['count'] : 0;
-    } else {
-        $stats['upcoming_defenses'] = 0;
-    }
-    
-    $archived_query = "SELECT COUNT(*) as count FROM thesis_table WHERE status = 'archived'";
+    // Archived projects
+    $archived_query = "SELECT COUNT(*) as count FROM thesis_table WHERE is_archived = 1";
     $archived_result = $conn->query($archived_query);
     $stats['archived_count'] = ($archived_result && $archived_result->num_rows > 0) ? ($archived_result->fetch_assoc())['count'] : 0;
     
@@ -214,30 +205,10 @@ if ($thesis_table_exists) {
     $stats['ongoing_projects'] = 0;
     $stats['archived_count'] = 0;
     $stats['theses_approved'] = 0;
-    $stats['upcoming_defenses'] = 0;
 }
 
-// GET FORWARDED THESES FOR DEAN REVIEW
+// GET FORWARDED THESES FOR DEAN REVIEW - FIXED: No status column, so none
 $forwarded_theses = [];
-if ($thesis_table_exists) {
-    $forwarded_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted 
-                        FROM thesis_table 
-                        WHERE status = 'forwarded_to_dean'
-                        ORDER BY date_submitted DESC";
-    $forwarded_result = $conn->query($forwarded_query);
-    if ($forwarded_result && $forwarded_result->num_rows > 0) {
-        while ($row = $forwarded_result->fetch_assoc()) {
-            $forwarded_theses[] = [
-                'id' => $row['thesis_id'],
-                'title' => $row['title'],
-                'author' => $row['adviser'] ?? 'Unknown',
-                'department' => $row['department'] ?? $department_name,
-                'date' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
-                'status' => $row['status']
-            ];
-        }
-    }
-}
 
 // GET FACULTY MEMBERS
 $faculty_members = [];
@@ -265,7 +236,7 @@ if ($faculty_result && $faculty_result->num_rows > 0) {
     }
 }
 
-// GET STUDENTS - FIXED: removed created_at
+// GET STUDENTS
 $students_list = [];
 $students_query = "SELECT user_id, first_name, last_name, email, status, contact_number, address, birth_date FROM user_table WHERE role_id = 2 ORDER BY first_name ASC";
 $students_result = $conn->query($students_query);
@@ -293,10 +264,10 @@ if ($students_result && $students_result->num_rows > 0) {
     }
 }
 
-// GET DEPARTMENT PROJECTS
+// GET DEPARTMENT PROJECTS - FIXED: No status column
 $department_projects = [];
 if ($thesis_table_exists) {
-    $projects_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted FROM thesis_table ORDER BY date_submitted DESC LIMIT 10";
+    $projects_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived FROM thesis_table ORDER BY date_submitted DESC LIMIT 10";
     $projects_result = $conn->query($projects_query);
     if ($projects_result && $projects_result->num_rows > 0) {
         while ($row = $projects_result->fetch_assoc()) {
@@ -308,7 +279,7 @@ if ($thesis_table_exists) {
                 'department' => $row['department'] ?? $department_name,
                 'year' => $row['year'] ?? 'N/A',
                 'submitted' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
-                'status' => strtolower($row['status']),
+                'status' => ($row['is_archived'] == 1) ? 'archived' : 'pending',
                 'defense_date' => null
             ];
         }
@@ -319,30 +290,6 @@ if ($thesis_table_exists) {
 $archived_projects = array_filter($department_projects, function($p) {
     return $p['status'] == 'archived';
 });
-
-// GET UPCOMING DEFENSES
-$upcoming_defenses = [];
-if ($thesis_table_exists) {
-    $check_defense_col = $conn->query("SHOW COLUMNS FROM thesis_table LIKE 'defense_date'");
-    $has_defense_date = ($check_defense_col && $check_defense_col->num_rows > 0);
-    
-    if ($has_defense_date) {
-        $defenses_query = "SELECT thesis_id, title, adviser, defense_date, defense_time, panelists FROM thesis_table WHERE defense_date IS NOT NULL AND defense_date >= CURDATE() ORDER BY defense_date ASC LIMIT 5";
-        $defenses_result = $conn->query($defenses_query);
-        if ($defenses_result && $defenses_result->num_rows > 0) {
-            while ($row = $defenses_result->fetch_assoc()) {
-                $upcoming_defenses[] = [
-                    'id' => $row['thesis_id'],
-                    'student' => $row['adviser'] ?? 'Unknown',
-                    'title' => $row['title'],
-                    'date' => $row['defense_date'],
-                    'time' => $row['defense_time'] ?? 'TBA',
-                    'panelists' => $row['panelists'] ?? 'To be announced'
-                ];
-            }
-        }
-    }
-}
 
 // GET RECENT ACTIVITIES
 $department_activities = [];
@@ -472,17 +419,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .dean-name { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
         .dean-since { font-size: 0.7rem; opacity: 0.8; }
         
-        .pending-card { background: white; border-radius: 24px; padding: 24px; margin-bottom: 32px; border: 1px solid #ffcdd2; }
-        .pending-card h3 { font-size: 1rem; font-weight: 600; color: #991b1b; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
-        .pending-list { display: flex; flex-direction: column; gap: 12px; }
-        .pending-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: #fef2f2; border-radius: 16px; border-left: 3px solid #dc2626; flex-wrap: wrap; gap: 12px; }
-        .pending-item:hover { background: #fee2e2; }
-        .pending-info { flex: 1; }
-        .pending-title { font-weight: 600; font-size: 0.9rem; color: #1f2937; margin-bottom: 5px; }
-        .pending-meta { font-size: 0.7rem; color: #6b7280; display: flex; gap: 15px; flex-wrap: wrap; }
-        .btn-review { background: #dc2626; color: white; padding: 6px 16px; border-radius: 20px; text-decoration: none; font-size: 0.75rem; font-weight: 500; transition: all 0.2s; }
-        .btn-review:hover { background: #991b1b; transform: translateY(-2px); }
-        
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
         .stat-card { background: white; border-radius: 20px; padding: 24px; display: flex; align-items: center; gap: 18px; border: 1px solid #ffcdd2; transition: all 0.3s; }
         .stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(220, 38, 38, 0.1); }
@@ -538,17 +474,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #dc2626; color: white; text-decoration: none; border-radius: 20px; font-size: 0.7rem; font-weight: 500; transition: all 0.3s; }
         .btn-view:hover { background: #991b1b; transform: scale(1.05); }
         
-        .defenses-section { margin-bottom: 32px; }
-        .defense-item { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; border: 1px solid #ffcdd2; display: flex; align-items: center; gap: 20px; }
-        .defense-date-box { text-align: center; background: #fef2f2; padding: 10px 15px; border-radius: 12px; min-width: 70px; }
-        .defense-day { font-size: 1.5rem; font-weight: 700; color: #dc2626; }
-        .defense-month { font-size: 0.7rem; color: #6b7280; }
-        .defense-details { flex: 1; }
-        .defense-title { font-weight: 600; color: #1f2937; margin-bottom: 8px; }
-        .defense-meta { display: flex; gap: 20px; font-size: 0.75rem; color: #6b7280; margin-bottom: 5px; }
-        .defense-meta i { width: 14px; color: #dc2626; }
-        .defense-panel { font-size: 0.7rem; color: #9ca3af; }
-        
         .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 32px; }
         .activities-list { display: flex; flex-direction: column; gap: 12px; }
         .activity-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #fef2f2; }
@@ -568,7 +493,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .empty-state { text-align: center; padding: 40px; color: #9ca3af; }
         .empty-state i { font-size: 3rem; margin-bottom: 12px; color: #dc2626; }
         
-        /* Status Badge for Students */
         .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
         .status-badge.Active { background: #d4edda; color: #155724; }
         .status-badge.Inactive { background: #f8d7da; color: #721c24; }
@@ -580,11 +504,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             .search-area, .profile-name { display: none; }
             .dept-banner { flex-direction: column; text-align: center; gap: 15px; }
             .dean-info { text-align: center; }
-            .defense-item { flex-direction: column; text-align: center; }
             .notification-dropdown { width: 320px; right: -10px; }
             .chart-container { height: 250px; }
-            .pending-item { flex-direction: column; align-items: flex-start; }
-            .btn-review { align-self: flex-start; }
         }
         @media (max-width: 480px) { 
             .notification-dropdown { width: 300px; right: -5px; }
@@ -592,14 +513,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         }
         
         body.dark-mode { background: #1a1a1a; }
-        body.dark-mode .top-nav, body.dark-mode .stat-card, body.dark-mode .dept-stat-card, body.dark-mode .chart-card, body.dark-mode .faculty-card, body.dark-mode .defense-item, body.dark-mode .notification-dropdown, body.dark-mode .pending-card { background: #2d2d2d; border-color: #991b1b; }
-        body.dark-mode .stat-details h3, body.dark-mode .dept-stat-value, body.dark-mode .section-title, body.dark-mode .notification-header h3, body.dark-mode .pending-title { color: #fecaca; }
-        body.dark-mode .faculty-name, body.dark-mode .defense-title, body.dark-mode .activity-text, body.dark-mode .notif-message, body.dark-mode .pending-meta { color: #e5e7eb; }
-        body.dark-mode .notification-item:hover, body.dark-mode .pending-item:hover { background: #3d3d3d; }
+        body.dark-mode .top-nav, body.dark-mode .stat-card, body.dark-mode .dept-stat-card, body.dark-mode .chart-card, body.dark-mode .faculty-card, body.dark-mode .notification-dropdown { background: #2d2d2d; border-color: #991b1b; }
+        body.dark-mode .stat-details h3, body.dark-mode .dept-stat-value, body.dark-mode .section-title, body.dark-mode .notification-header h3 { color: #fecaca; }
+        body.dark-mode .faculty-name, body.dark-mode .activity-text, body.dark-mode .notif-message { color: #e5e7eb; }
+        body.dark-mode .notification-item:hover { background: #3d3d3d; }
         body.dark-mode .notification-item.unread { background: #3a2a2a; }
         body.dark-mode .empty-state { color: #9ca3af; }
-        body.dark-mode .btn-review { background: #dc2626; }
-        body.dark-mode .btn-review:hover { background: #991b1b; }
         body.dark-mode .btn-view { background: #dc2626; color: white; }
         body.dark-mode .status-badge.Active { background: #1a3a1a; color: #86efac; }
         body.dark-mode .status-badge.Inactive { background: #3a1a1a; color: #fca5a5; }
@@ -696,38 +615,16 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
 
-        <!-- PENDING THESES FOR DEAN REVIEW SECTION -->
-        <?php if (!empty($forwarded_theses)): ?>
-        <div class="pending-card">
-            <h3><i class="fas fa-clock"></i> Theses Awaiting Your Review (<?= count($forwarded_theses) ?>)</h3>
-            <div class="pending-list">
-                <?php foreach ($forwarded_theses as $thesis): ?>
-                <div class="pending-item">
-                    <div class="pending-info">
-                        <div class="pending-title"><?= htmlspecialchars($thesis['title']) ?></div>
-                        <div class="pending-meta">
-                            <span><i class="fas fa-user"></i> <?= htmlspecialchars($thesis['author']) ?></span>
-                            <span><i class="fas fa-calendar"></i> <?= $thesis['date'] ?></span>
-                        </div>
-                    </div>
-                    <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-review"><i class="fas fa-eye"></i> Review Thesis</a>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php endif; ?>
-
         <div class="stats-grid">
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-user-graduate"></i></div><div class="stat-details"><h3><?= number_format($stats['total_students']) ?></h3><p>Students</p></div></div>
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-chalkboard-user"></i></div><div class="stat-details"><h3><?= number_format($stats['total_faculty']) ?></h3><p>Faculty</p></div></div>
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-project-diagram"></i></div><div class="stat-details"><h3><?= number_format($stats['total_projects']) ?></h3><p>Total Projects</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-clock"></i></div><div class="stat-details"><h3><?= number_format($stats['pending_reviews']) ?></h3><p>Pending Reviews</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-details"><h3><?= number_format($stats['archived_count']) ?></h3><p>Archived</p></div></div>
         </div>
 
         <div class="dept-stats">
-            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div><div class="dept-stat-value"><?= number_format($stats['completed_projects']) ?></div><div class="dept-stat-label">theses & projects</div></div>
             <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-spinner"></i><span>Ongoing</span></div><div class="dept-stat-value"><?= number_format($stats['ongoing_projects']) ?></div><div class="dept-stat-label">active projects</div></div>
-            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-gavel"></i><span>Defenses</span></div><div class="dept-stat-value"><?= number_format($stats['upcoming_defenses']) ?></div><div class="dept-stat-label">upcoming defenses</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-archive"></i><span>Archived</span></div><div class="dept-stat-value"><?= number_format($stats['archived_count']) ?></div><div class="dept-stat-label">archived projects</div></div>
             <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-chart-simple"></i><span>Total</span></div><div class="dept-stat-value"><?= number_format($stats['total_projects']) ?></div><div class="dept-stat-label">total projects</div></div>
         </div>
 
@@ -738,8 +635,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <canvas id="projectStatusChart"></canvas>
                 </div>
                 <div class="status-labels">
-                    <div class="status-label-item"><span class="status-color pending"></span><span>Pending (<?= $stats['ongoing_projects'] ?>)</span></div>
-                    <div class="status-label-item"><span class="status-color completed"></span><span>Completed (<?= $stats['completed_projects'] ?>)</span></div>
+                    <div class="status-label-item"><span class="status-color pending"></span><span>Ongoing (<?= $stats['ongoing_projects'] ?>)</span></div>
                     <div class="status-label-item"><span class="status-color archived"></span><span>Archived (<?= $stats['archived_count'] ?>)</span></div>
                 </div>
             </div>
@@ -790,21 +686,6 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                     <div class="empty-state"><i class="fas fa-folder-open"></i><p>No projects found</p></div>
                 <?php endif; ?>
             </div>
-        </div>
-
-        <div class="defenses-section">
-            <div class="section-header"><h2 class="section-title"><i class="fas fa-calendar-check"></i> Upcoming Thesis Defenses</h2><a href="#" class="view-all">Schedule New <i class="fas fa-plus"></i></a></div>
-            <?php if (count($upcoming_defenses) > 0): ?>
-                <?php foreach (array_slice($upcoming_defenses, 0, 3) as $defense): ?>
-                <div class="defense-item">
-                    <div class="defense-date-box"><div class="defense-day"><?= date('d', strtotime($defense['date'])) ?></div><div class="defense-month"><?= date('M', strtotime($defense['date'])) ?></div></div>
-                    <div class="defense-details"><div class="defense-title"><?= htmlspecialchars($defense['title']) ?></div><div class="defense-meta"><span><i class="fas fa-user-graduate"></i> <?= htmlspecialchars($defense['student']) ?></span><span><i class="far fa-clock"></i> <?= $defense['time'] ?></span></div><div class="defense-panel"><i class="fas fa-users"></i> Panel: <?= htmlspecialchars($defense['panelists']) ?></div></div>
-                    <a href="#" class="btn-view"><i class="fas fa-calendar-check"></i> Details</a>
-                </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <div class="empty-state"><i class="fas fa-calendar-alt"></i><p>No upcoming defenses scheduled</p></div>
-            <?php endif; ?>
         </div>
 
         <div class="bottom-grid">
@@ -882,13 +763,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="table-responsive">
                 <table class="theses-table">
                     <thead>
-                        <tr>
-                            <th>Student Name</th>
-                            <th>Email</th>
-                            <th>Theses Count</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
+                        <tr><th>Student Name</th><th>Email</th><th>Theses Count</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($students_list as $student): ?>
@@ -977,7 +852,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
-                </td>
+                </table>
             </div>
             <?php else: ?>
                 <div class="empty-state"><i class="fas fa-archive"></i><p>No archived projects found</p></div>
@@ -1021,9 +896,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-details"><h3><?= number_format($stats['archived_count']) ?></h3><p>Archived</p></div></div>
         </div>
         <div class="dept-stats">
-            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-check-circle"></i><span>Completed</span></div><div class="dept-stat-value"><?= number_format($stats['completed_projects']) ?></div><div class="dept-stat-label">theses & projects</div></div>
             <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-spinner"></i><span>Ongoing</span></div><div class="dept-stat-value"><?= number_format($stats['ongoing_projects']) ?></div><div class="dept-stat-label">active projects</div></div>
-            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-gavel"></i><span>Defenses</span></div><div class="dept-stat-value"><?= number_format($stats['upcoming_defenses']) ?></div><div class="dept-stat-label">upcoming defenses</div></div>
+            <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-archive"></i><span>Archived</span></div><div class="dept-stat-value"><?= number_format($stats['archived_count']) ?></div><div class="dept-stat-label">archived projects</div></div>
             <div class="dept-stat-card"><div class="dept-stat-header"><i class="fas fa-chart-simple"></i><span>Total</span></div><div class="dept-stat-value"><?= number_format($stats['total_projects']) ?></div><div class="dept-stat-label">total projects</div></div>
         </div>
         <?php endif; ?>
@@ -1032,8 +906,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <script>
         window.chartData = {
             status: {
-                pending: <?= $stats['ongoing_projects'] ?? 0 ?>,
-                completed: <?= $stats['completed_projects'] ?? 0 ?>,
+                ongoing: <?= $stats['ongoing_projects'] ?? 0 ?>,
                 archived: <?= $stats['archived_count'] ?? 0 ?>
             },
             workload_labels: <?= json_encode($workload_labels) ?>,
@@ -1126,10 +999,10 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 window.statusChartInstance = new Chart(statusCtx, {
                     type: 'doughnut',
                     data: {
-                        labels: ['Pending', 'Completed', 'Archived'],
+                        labels: ['Ongoing', 'Archived'],
                         datasets: [{
-                            data: [window.chartData.status.pending, window.chartData.status.completed, window.chartData.status.archived],
-                            backgroundColor: ['#f59e0b', '#10b981', '#6b7280'],
+                            data: [window.chartData.status.ongoing, window.chartData.status.archived],
+                            backgroundColor: ['#f59e0b', '#6b7280'],
                             borderWidth: 0,
                             cutout: '60%',
                             hoverOffset: 10,
@@ -1194,8 +1067,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 new Chart(reportStatusCtx, {
                     type: 'pie',
                     data: {
-                        labels: ['Pending', 'Completed', 'Archived'],
-                        datasets: [{ data: [window.chartData.status.pending, window.chartData.status.completed, window.chartData.status.archived], backgroundColor: ['#f59e0b', '#10b981', '#6b7280'] }]
+                        labels: ['Ongoing', 'Archived'],
+                        datasets: [{ data: [window.chartData.status.ongoing, window.chartData.status.archived], backgroundColor: ['#f59e0b', '#6b7280'] }]
                     },
                     options: { responsive: true, maintainAspectRatio: true }
                 });

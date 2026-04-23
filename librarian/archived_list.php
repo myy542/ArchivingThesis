@@ -32,7 +32,7 @@ if ($user_data) {
     $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 }
 
-// GET NOTIFICATION COUNT - FIXED: 'status' to 'is_read'
+// GET NOTIFICATION COUNT - using 'is_read'
 $notificationCount = 0;
 $notif_check = $conn->query("SHOW TABLES LIKE 'notifications'");
 if ($notif_check && $notif_check->num_rows) {
@@ -46,7 +46,7 @@ if ($notif_check && $notif_check->num_rows) {
     $n->close();
 }
 
-// GET RECENT NOTIFICATIONS - FIXED: 'status' to 'is_read'
+// GET RECENT NOTIFICATIONS - using 'is_read'
 $recentNotifications = [];
 $notif_list = $conn->prepare("SELECT notification_id, user_id, thesis_id, message, is_read, created_at, link FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5");
 $notif_list->bind_param("i", $user_id);
@@ -65,7 +65,7 @@ while ($row = $notif_result->fetch_assoc()) {
 }
 $notif_list->close();
 
-// MARK NOTIFICATION AS READ - FIXED: 'status' to 'is_read'
+// MARK NOTIFICATION AS READ
 if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     $notif_id = intval($_POST['notif_id']);
     $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?");
@@ -76,7 +76,7 @@ if (isset($_POST['mark_read']) && isset($_POST['notif_id'])) {
     exit;
 }
 
-// MARK ALL AS READ - FIXED: 'status' to 'is_read'
+// MARK ALL AS READ
 if (isset($_POST['mark_all_read'])) {
     $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?");
     $update->bind_param("i", $user_id);
@@ -86,12 +86,12 @@ if (isset($_POST['mark_all_read'])) {
     exit;
 }
 
-// GET ARCHIVED THESES
+// ==================== GET ARCHIVED THESES - FIXED: Use is_archived = 1 ====================
 $archived_theses = [];
 $archived_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                    FROM thesis_table t
                    JOIN user_table u ON t.student_id = u.user_id
-                   WHERE t.status = 'archived'
+                   WHERE t.is_archived = 1
                    ORDER BY t.archived_date DESC";
 $archived_result = $conn->query($archived_query);
 if ($archived_result && $archived_result->num_rows > 0) {
@@ -292,7 +292,6 @@ $pageTitle = "Archived Theses List";
         <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">LIBRARIAN</div></div>
         <div class="nav-menu">
             <a href="librarian_dashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
-            <a href="librarian_archive.php" class="nav-item"><i class="fas fa-archive"></i><span>Archive Theses</span></a>
             <a href="archived_list.php" class="nav-item active"><i class="fas fa-folder-open"></i><span>Archived List</span></a>
         </div>
         <div class="nav-footer">

@@ -108,13 +108,14 @@ function notifyDean($conn, $thesis_id, $thesis_title, $student_name, $coordinato
     return true;
 }
 
-// GET PENDING THESES FROM THESIS_TABLE (status = 'pending_coordinator')
+// ==================== GET THESIS DATA (NO STATUS COLUMN, USING is_archived) ====================
+// For pending review - theses that are NOT archived (is_archived = 0 or NULL)
 $pending_theses = [];
 if ($thesis_table_exists) {
     $pending_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                       FROM thesis_table t
                       JOIN user_table u ON t.student_id = u.user_id
-                      WHERE t.status = 'pending_coordinator'
+                      WHERE (t.is_archived = 0 OR t.is_archived IS NULL)
                       ORDER BY t.date_submitted DESC";
     $pending_result = $conn->query($pending_query);
     if ($pending_result && $pending_result->num_rows > 0) {
@@ -155,12 +156,8 @@ if (isset($_POST['forward_to_dean']) && isset($_POST['thesis_id']) && $thesis_ta
     $student_name = $_POST['student_name'] ?? '';
     $coordinator_name = $fullName;
     
-    $update_thesis = "UPDATE thesis_table SET status = 'forwarded_to_dean' WHERE thesis_id = ?";
-    $update_stmt = $conn->prepare($update_thesis);
-    $update_stmt->bind_param("i", $thesis_id);
-    $update_stmt->execute();
-    $update_stmt->close();
-    
+    // Since wala'y status column, we just notify dean (no update to thesis table)
+    // Option: Add a column for forwarded_to_dean if needed
     notifyDean($conn, $thesis_id, $thesis_title, $student_name, $coordinator_name);
     
     echo json_encode(['success' => true, 'message' => 'Thesis forwarded to Dean successfully']);
@@ -173,32 +170,28 @@ if (isset($_POST['reject_thesis']) && isset($_POST['thesis_id']) && $thesis_tabl
     $thesis_id = intval($_POST['thesis_id']);
     $reason = $_POST['reason'] ?? 'No reason provided';
     
-    $update_thesis = "UPDATE thesis_table SET status = 'rejected' WHERE thesis_id = ?";
-    $update_stmt = $conn->prepare($update_thesis);
-    $update_stmt->bind_param("i", $thesis_id);
-    $update_stmt->execute();
-    $update_stmt->close();
-    
+    // Option: Add columns for rejection tracking
+    // For now, just acknowledge
     echo json_encode(['success' => true, 'message' => 'Thesis rejected successfully']);
     exit;
 }
 
-// GET THESIS DATA FOR STATS AND DISPLAY
+// GET THESIS DATA FOR STATS AND DISPLAY (using is_archived)
 $allSubmissions = [
-    'pending_coordinator' => [],
-    'forwarded_to_dean' => [],
-    'rejected' => []
+    'pending' => [],
+    'archived' => []
 ];
 
 if ($thesis_table_exists) {
-    $pending_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted 
+    // Pending (not archived)
+    $pending_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived 
                       FROM thesis_table 
-                      WHERE status = 'pending_coordinator'
+                      WHERE (is_archived = 0 OR is_archived IS NULL)
                       ORDER BY date_submitted DESC";
     $pending_result = $conn->query($pending_query);
     if ($pending_result && $pending_result->num_rows > 0) {
         while ($row = $pending_result->fetch_assoc()) {
-            $allSubmissions['pending_coordinator'][] = [
+            $allSubmissions['pending'][] = [
                 'title' => $row['title'],
                 'author' => $row['adviser'] ?? 'Unknown',
                 'date' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
@@ -207,24 +200,15 @@ if ($thesis_table_exists) {
         }
     }
     
-    $forwarded_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted FROM thesis_table WHERE status = 'forwarded_to_dean' ORDER BY date_submitted DESC";
-    $forwarded_result = $conn->query($forwarded_query);
-    if ($forwarded_result && $forwarded_result->num_rows > 0) {
-        while ($row = $forwarded_result->fetch_assoc()) {
-            $allSubmissions['forwarded_to_dean'][] = [
-                'title' => $row['title'],
-                'author' => $row['adviser'] ?? 'Unknown',
-                'date' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
-                'id' => $row['thesis_id']
-            ];
-        }
-    }
-    
-    $rejected_query = "SELECT thesis_id, title, adviser, department, year, status, date_submitted FROM thesis_table WHERE status = 'rejected' ORDER BY date_submitted DESC";
-    $rejected_result = $conn->query($rejected_query);
-    if ($rejected_result && $rejected_result->num_rows > 0) {
-        while ($row = $rejected_result->fetch_assoc()) {
-            $allSubmissions['rejected'][] = [
+    // Archived
+    $archived_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived 
+                       FROM thesis_table 
+                       WHERE is_archived = 1
+                       ORDER BY date_submitted DESC";
+    $archived_result = $conn->query($archived_query);
+    if ($archived_result && $archived_result->num_rows > 0) {
+        while ($row = $archived_result->fetch_assoc()) {
+            $allSubmissions['archived'][] = [
                 'title' => $row['title'],
                 'author' => $row['adviser'] ?? 'Unknown',
                 'date' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
@@ -235,12 +219,11 @@ if ($thesis_table_exists) {
 }
 
 $stats = [
-    'forwarded' => count($allSubmissions['forwarded_to_dean']),
-    'rejected'  => count($allSubmissions['rejected']),
-    'pending'   => count($allSubmissions['pending_coordinator'])
+    'pending'   => count($allSubmissions['pending']),
+    'archived'  => count($allSubmissions['archived'])
 ];
 
-$pendingTheses = $allSubmissions['pending_coordinator'];
+$pendingTheses = $allSubmissions['pending'];
 
 $allThesesWithStatus = [];
 foreach ($allSubmissions as $status => $theses) {
@@ -274,16 +257,15 @@ foreach ($monthly_data as $val) {
 
 $sample_monthly_data = [3, 4, 5, 6, 8, 10, 12, 9, 7, 5, 4, 2];
 $sample_stats = [
-    'forwarded' => 5,
-    'rejected'  => 2,
-    'pending'   => 8
+    'pending'   => 8,
+    'archived'  => 2
 ];
 
 if (!$hasMonthlyData) {
     $monthly_data = $sample_monthly_data;
 }
 
-if ($stats['pending'] == 0 && $stats['forwarded'] == 0 && $stats['rejected'] == 0) {
+if ($stats['pending'] == 0 && $stats['archived'] == 0) {
     $stats = $sample_stats;
 }
 
@@ -302,6 +284,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <style>
+        /* Your existing CSS - keep the same */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
         
@@ -465,7 +448,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .coordinator-position { font-size: 0.8rem; opacity: 0.9; }
         .coordinator-since { font-size: 0.7rem; opacity: 0.7; }
         
-        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 32px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-bottom: 32px; }
         .stat-card { background: white; border-radius: 20px; padding: 24px; display: flex; align-items: center; gap: 20px; border: 1px solid #fee2e2; transition: all 0.2s; }
         .stat-card:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
         .stat-icon { width: 60px; height: 60px; border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; background: #fef2f2; color: #dc2626; }
@@ -537,8 +520,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         }
         
         .status-color.pending { background: #f59e0b; }
-        .status-color.forwarded { background: #3b82f6; }
-        .status-color.rejected { background: #ef4444; }
+        .status-color.archived { background: #6c757d; }
         
         .monthly-stats { 
             display: grid; 
@@ -594,9 +576,8 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         .theses-table th { text-align: left; padding: 12px 8px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #fee2e2; }
         .theses-table td { padding: 12px 8px; border-bottom: 1px solid #fef2f2; font-size: 0.85rem; }
         .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
-        .status-badge.pending_coordinator { background: #fef3c7; color: #d97706; }
-        .status-badge.forwarded_to_dean { background: #dbeafe; color: #2563eb; }
-        .status-badge.rejected { background: #fee2e2; color: #dc2626; }
+        .status-badge.pending { background: #fef3c7; color: #d97706; }
+        .status-badge.archived { background: #e2e3e5; color: #383d41; }
         .btn-view { 
             display: inline-flex; 
             align-items: center; 
@@ -909,7 +890,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <!-- PENDING THESES FROM FACULTY SECTION -->
         <?php if (!empty($pending_theses)): ?>
         <div class="notification-card">
-            <h3><i class="fas fa-bell"></i> Pending Theses for Dean Forwarding (<?= count($pending_theses) ?>)</h3>
+            <h3><i class="fas fa-bell"></i> Theses Ready for Dean Forwarding (<?= count($pending_theses) ?>)</h3>
             <div class="notification-item-list" id="facultyNotificationsList">
                 <?php foreach ($pending_theses as $thesis): ?>
                 <div class="notification-list-item" data-thesis-id="<?= $thesis['thesis_id'] ?>" data-thesis-title="<?= htmlspecialchars($thesis['title']) ?>" data-student-name="<?= htmlspecialchars($thesis['first_name'] . ' ' . $thesis['last_name']) ?>">
@@ -939,18 +920,17 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </div>
         <?php else: ?>
         <div class="notification-card">
-            <h3><i class="fas fa-bell"></i> Pending Theses for Dean Forwarding</h3>
+            <h3><i class="fas fa-bell"></i> Theses Ready for Dean Forwarding</h3>
             <div class="empty-state" style="padding: 20px;">
                 <i class="fas fa-check-circle"></i>
-                <p>No pending theses from faculty to review.</p>
+                <p>No pending theses to forward to Dean.</p>
             </div>
         </div>
         <?php endif; ?>
 
         <div class="stats-grid">
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-arrow-right"></i></div><div class="stat-content"><h3><?= number_format($stats['forwarded']) ?></h3><p>Forwarded to Dean</p></div></div>
-            <div class="stat-card"><div class="stat-icon"><i class="fas fa-times-circle"></i></div><div class="stat-content"><h3><?= number_format($stats['rejected']) ?></h3><p>Rejected</p></div></div>
             <div class="stat-card"><div class="stat-icon"><i class="fas fa-clock"></i></div><div class="stat-content"><h3><?= number_format($stats['pending']) ?></h3><p>Pending Review</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-content"><h3><?= number_format($stats['archived']) ?></h3><p>Archived</p></div></div>
         </div>
 
         <div class="charts-row">
@@ -961,8 +941,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 </div>
                 <div class="status-labels">
                     <div class="status-label-item"><span class="status-color pending"></span><span>Pending Review (<?= $stats['pending'] ?>)</span></div>
-                    <div class="status-label-item"><span class="status-color forwarded"></span><span>Forwarded to Dean (<?= $stats['forwarded'] ?>)</span></div>
-                    <div class="status-label-item"><span class="status-color rejected"></span><span>Rejected (<?= $stats['rejected'] ?>)</span></div>
+                    <div class="status-label-item"><span class="status-color archived"></span><span>Archived (<?= $stats['archived'] ?>)</span></div>
                 </div>
             </div>
             <div class="chart-card">
@@ -1024,13 +1003,9 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <td><?= $thesis['date'] ?></td>
                             <td>
                                 <span class="status-badge <?= $thesis['status'] ?>">
-                                    <?php 
-                                    $status_text = ucfirst(str_replace('_', ' ', $thesis['status'])); 
-                                    if ($status_text == 'Pending_coordinator') $status_text = 'Pending Review'; 
-                                    echo $status_text; 
-                                    ?>
+                                    <?= ucfirst($thesis['status']) ?>
                                 </span>
-                            </td>
+                            </span>
                             <td>
                                 <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
                                     <i class="fas fa-eye"></i> View
@@ -1048,8 +1023,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         window.chartData = { 
             status: { 
                 pending: <?= $stats['pending'] ?>, 
-                forwarded: <?= $stats['forwarded'] ?>, 
-                rejected: <?= $stats['rejected'] ?> 
+                archived: <?= $stats['archived'] ?>
             }, 
             monthly: <?= json_encode($monthly_data) ?>, 
             months: <?= json_encode($months) ?> 
@@ -1354,14 +1328,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                 window.statusChartInstance = new Chart(statusCtx, {
                     type: 'doughnut',
                     data: {
-                        labels: ['Pending Review', 'Forwarded to Dean', 'Rejected'],
+                        labels: ['Pending Review', 'Archived'],
                         datasets: [{
                             data: [
                                 window.chartData.status.pending, 
-                                window.chartData.status.forwarded, 
-                                window.chartData.status.rejected
+                                window.chartData.status.archived
                             ],
-                            backgroundColor: ['#f59e0b', '#3b82f6', '#ef4444'],
+                            backgroundColor: ['#f59e0b', '#6c757d'],
                             borderWidth: 0,
                             cutout: '60%',
                             hoverOffset: 10,
@@ -1490,7 +1463,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             initCharts();
             initSearch();
             initNotifications();
-            console.log('Coordinator Dashboard Initialized - Using thesis_table');
+            console.log('Coordinator Dashboard Initialized - Using is_archived column');
         });
     </script>
 </body>

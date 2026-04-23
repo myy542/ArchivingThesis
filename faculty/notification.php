@@ -35,7 +35,28 @@ $last  = trim($faculty["last_name"] ?? "");
 $fullName = trim($first . " " . $last);
 $initials = $first && $last ? strtoupper(substr($first, 0, 1) . substr($last, 0, 1)) : "FA";
 
-// GI-USAB: notification_table -> notifications, status -> is_read
+// ==================== HANDLE MARK AS READ (GET REQUEST) ====================
+if (isset($_GET['mark_read']) && isset($_GET['id'])) {
+    $notif_id = (int)$_GET['id'];
+    $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE notification_id = ? AND user_id = ?");
+    $update->bind_param("ii", $notif_id, $user_id);
+    $update->execute();
+    $update->close();
+    header("Location: notification.php");
+    exit;
+}
+
+// ==================== HANDLE MARK ALL AS READ (GET REQUEST) ====================
+if (isset($_GET['mark_all_read'])) {
+    $update = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0");
+    $update->bind_param("i", $user_id);
+    $update->execute();
+    $update->close();
+    header("Location: notification.php");
+    exit;
+}
+
+// ==================== GET NOTIFICATIONS ====================
 $notifications = [];
 try {
     $query = "SELECT n.*, t.title as thesis_title, t.thesis_id,
@@ -58,7 +79,7 @@ try {
     error_log("Notification error: " . $e->getMessage());
 }
 
-// GI-USAB: status -> is_read
+// ==================== GET UNREAD COUNT ====================
 $unreadCount = 0;
 try {
     $countQuery = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0";
@@ -540,9 +561,9 @@ $pageTitle = "Notifications";
             <div class="notification-header">
                 <h2><i class="fas fa-bell"></i> All Notifications</h2>
                 <?php if ($unreadCount > 0): ?>
-                    <button class="btn-mark-all" id="markAllReadBtn">
+                    <a href="?mark_all_read=1" class="btn-mark-all">
                         <i class="fas fa-check-double"></i> Mark All as Read
-                    </button>
+                    </a>
                 <?php endif; ?>
             </div>
 
@@ -577,9 +598,9 @@ $pageTitle = "Notifications";
                             </div>
                             <div class="notification-actions">
                                 <?php if ($notif['is_read'] == 0): ?>
-                                    <button class="btn-mark mark-read-btn" data-id="<?= $notif['notification_id'] ?>">
+                                    <a href="?mark_read=1&id=<?= $notif['notification_id'] ?>" class="btn-mark">
                                         <i class="fas fa-check"></i> Mark Read
-                                    </button>
+                                    </a>
                                 <?php endif; ?>
                                 <?php if (!empty($notif['thesis_id'])): ?>
                                     <a href="reviewThesis.php?id=<?= $notif['thesis_id'] ?>" class="btn-view">
@@ -608,119 +629,15 @@ $pageTitle = "Notifications";
             }
         }
 
-        // Mark single notification as read
-        document.querySelectorAll('.mark-read-btn').forEach(btn => {
-            btn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const notificationId = this.getAttribute('data-id');
-                const notificationItem = this.closest('.notification-item');
-                
-                this.disabled = true;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-                
-                fetch('notification_handler.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ 
-                        action: 'mark_read',
-                        notification_id: notificationId 
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        notificationItem.classList.remove('unread');
-                        
-                        const sidebarBadge = document.querySelector('.sidebar-nav .badge');
-                        if (sidebarBadge) {
-                            let currentCount = parseInt(sidebarBadge.textContent);
-                            if (currentCount > 1) {
-                                sidebarBadge.textContent = currentCount - 1;
-                            } else {
-                                sidebarBadge.remove();
-                            }
-                        }
-                        
-                        this.remove();
-                        
-                        const unreadItems = document.querySelectorAll('.notification-item.unread');
-                        if (unreadItems.length === 0) {
-                            const markAllBtn = document.getElementById('markAllReadBtn');
-                            if (markAllBtn) markAllBtn.remove();
-                        }
-                    } else {
-                        alert('Error: ' + (data.error || 'Unknown error'));
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-check"></i> Mark Read';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Network error occurred');
-                    this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-check"></i> Mark Read';
-                });
-            });
-        });
-
-        // Mark all as read
-        const markAllBtn = document.getElementById('markAllReadBtn');
-        if (markAllBtn) {
-            markAllBtn.addEventListener('click', function() {
-                this.disabled = true;
-                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-                
-                fetch('notification_handler.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ action: 'mark_all_read' })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.querySelectorAll('.notification-item').forEach(item => {
-                            item.classList.remove('unread');
-                        });
-                        document.querySelectorAll('.mark-read-btn').forEach(btn => btn.remove());
-                        const sidebarBadge = document.querySelector('.sidebar-nav .badge');
-                        if (sidebarBadge) sidebarBadge.remove();
-                        this.remove();
-                    } else {
-                        alert('Error: ' + (data.error || 'Unknown error'));
-                        this.disabled = false;
-                        this.innerHTML = '<i class="fas fa-check-double"></i> Mark All as Read';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Network error occurred');
-                    this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-check-double"></i> Mark All as Read';
-                });
-            });
-        }
-
-        // Click on notification item to mark as read and view
+        // Click on notification item to view
         document.querySelectorAll('.notification-item').forEach(item => {
             item.addEventListener('click', function(e) {
-                if (e.target.closest('button') || e.target.closest('a')) return;
+                if (e.target.closest('a') || e.target.closest('.btn-mark')) return;
                 
-                const notificationId = this.getAttribute('data-notification-id');
                 const thesisId = this.getAttribute('data-thesis-id');
-                const markReadBtn = this.querySelector('.mark-read-btn');
-                
-                if (markReadBtn && this.classList.contains('unread')) {
-                    markReadBtn.click();
-                }
                 
                 if (thesisId && thesisId > 0 && thesisId != '0') {
-                    setTimeout(() => {
-                        window.location.href = 'reviewThesis.php?id=' + thesisId;
-                    }, 500);
+                    window.location.href = 'reviewThesis.php?id=' + thesisId;
                 }
             });
         });

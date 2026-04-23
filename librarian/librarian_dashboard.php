@@ -102,12 +102,13 @@ if (isset($_POST['mark_all_read'])) {
     exit;
 }
 
-// GET APPROVED THESES (PENDING FOR ARCHIVING)
+// ==================== FIXED: No 'status' column, using 'is_archived' ====================
+// GET PENDING FOR ARCHIVING (theses that are NOT archived - is_archived = 0)
 $pending_theses = [];
 $pending_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                   FROM thesis_table t
                   JOIN user_table u ON t.student_id = u.user_id
-                  WHERE t.status = 'approved' OR t.status = 'forwarded_to_dean'
+                  WHERE (t.is_archived = 0 OR t.is_archived IS NULL)
                   ORDER BY t.date_submitted DESC";
 $pending_result = $conn->query($pending_query);
 if ($pending_result && $pending_result->num_rows > 0) {
@@ -116,12 +117,12 @@ if ($pending_result && $pending_result->num_rows > 0) {
     }
 }
 
-// GET ARCHIVED THESES
+// GET ARCHIVED THESES (is_archived = 1)
 $archived_theses = [];
 $archived_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                    FROM thesis_table t
                    JOIN user_table u ON t.student_id = u.user_id
-                   WHERE t.status = 'archived'
+                   WHERE t.is_archived = 1
                    ORDER BY t.archived_date DESC";
 $archived_result = $conn->query($archived_query);
 if ($archived_result && $archived_result->num_rows > 0) {
@@ -136,7 +137,7 @@ $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct',
 
 $monthly_query = "SELECT MONTH(archived_date) as month, COUNT(*) as count 
                   FROM thesis_table 
-                  WHERE status = 'archived' AND YEAR(archived_date) = YEAR(CURDATE())
+                  WHERE is_archived = 1 AND YEAR(archived_date) = YEAR(CURDATE())
                   GROUP BY MONTH(archived_date)";
 $monthly_result = $conn->query($monthly_query);
 if ($monthly_result && $monthly_result->num_rows > 0) {
@@ -145,9 +146,9 @@ if ($monthly_result && $monthly_result->num_rows > 0) {
     }
 }
 
-// GET DEPARTMENT STATS FOR PIE CHART
+// GET DEPARTMENT STATS FOR PIE CHART (archived only)
 $dept_stats = [];
-$dept_query = "SELECT department, COUNT(*) as count FROM thesis_table WHERE status = 'archived' GROUP BY department ORDER BY count DESC";
+$dept_query = "SELECT department, COUNT(*) as count FROM thesis_table WHERE is_archived = 1 GROUP BY department ORDER BY count DESC";
 $dept_result = $conn->query($dept_query);
 if ($dept_result && $dept_result->num_rows > 0) {
     while ($row = $dept_result->fetch_assoc()) {
@@ -298,6 +299,7 @@ $pageTitle = "Librarian Dashboard";
         .theses-table td { padding: 12px; border-bottom: 1px solid #fef2f2; font-size: 0.85rem; }
         .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
         .status-badge.archived { background: #d1ecf1; color: #0c5460; }
+        .status-badge.pending { background: #fef3c7; color: #d97706; }
         
         .empty-state { text-align: center; padding: 40px; color: #9ca3af; }
         .empty-state i { font-size: 3rem; margin-bottom: 12px; color: #dc2626; }
@@ -392,7 +394,7 @@ $pageTitle = "Librarian Dashboard";
                     <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
                 </div>
                 <div class="profile-dropdown" id="profileDropdown">
-                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
+                    <a href="librarian_profile.php"><i class="fas fa-user"></i> Profile</a>
                     <a href="#"><i class="fas fa-cog"></i> Settings</a>
                     <hr>
                     <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>

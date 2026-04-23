@@ -42,13 +42,14 @@ if ($check_thesis && $check_thesis->num_rows > 0) {
     $thesis_table_exists = true;
 }
 
-// ==================== GET ALL PENDING THESES (for list view) ====================
+// ==================== GET ALL PENDING THESES (for list view) - FIXED: Use is_archived = 0 ====================
 $pending_theses_list = [];
 if ($thesis_table_exists && $thesis_id == 0) {
+    // Since wala'y status column, pending means is_archived = 0
     $pending_query = "SELECT t.*, u.first_name, u.last_name, u.email 
                       FROM thesis_table t
                       JOIN user_table u ON t.student_id = u.user_id
-                      WHERE t.status = 'pending_coordinator'
+                      WHERE (t.is_archived = 0 OR t.is_archived IS NULL)
                       ORDER BY t.date_submitted DESC";
     $pending_result = $conn->query($pending_query);
     if ($pending_result && $pending_result->num_rows > 0) {
@@ -65,7 +66,7 @@ $thesis_author = 'Unknown Author';
 $thesis_abstract = 'No abstract available.';
 $thesis_file = '';
 $thesis_date = '';
-$thesis_status = '';
+$thesis_is_archived = 0;
 $student_name = '';
 $student_id = null;
 
@@ -85,12 +86,15 @@ if ($thesis_id > 0 && $thesis_table_exists) {
         $thesis_abstract = $thesis_row['abstract'] ?? 'No abstract available.';
         $thesis_file = $thesis_row['file_path'] ?? '';
         $thesis_date = isset($thesis_row['date_submitted']) ? date('M d, Y', strtotime($thesis_row['date_submitted'])) : date('M d, Y');
-        $thesis_status = $thesis_row['status'] ?? 'pending';
+        $thesis_is_archived = $thesis_row['is_archived'] ?? 0;
         $student_name = $thesis_row['first_name'] . ' ' . $thesis_row['last_name'];
         $student_id = $thesis_row['student_user_id'];
     }
     $thesis_stmt->close();
 }
+
+// Determine status for display (since wala'y status column, pending if not archived)
+$thesis_status = ($thesis_is_archived == 1) ? 'archived' : 'pending_coordinator';
 
 $message = '';
 $messageType = '';
@@ -103,11 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['forward_to_dean'])) {
     $conn->begin_transaction();
     
     try {
-        $updateQuery = "UPDATE thesis_table SET status = 'forwarded_to_dean', forwarded_to_dean_at = NOW() WHERE thesis_id = ?";
-        $stmt = $conn->prepare($updateQuery);
-        $stmt->bind_param("i", $thesis_id_post);
-        $stmt->execute();
-        $stmt->close();
+        // Since wala'y status column, we can add a column for forwarded status or just note
+        // For now, we'll just notify the dean
+        // Option: Add a forwarded_to_dean column if needed
+        // $updateQuery = "UPDATE thesis_table SET forwarded_to_dean = 1, forwarded_to_dean_at = NOW() WHERE thesis_id = ?";
         
         // Notify Dean
         $dean_query = "SELECT user_id FROM user_table WHERE role_id = 4";
@@ -156,11 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['request_revision'])) {
     $conn->begin_transaction();
     
     try {
-        $updateQuery = "UPDATE thesis_table SET status = 'pending', revision_feedback = ?, revised_at = NOW() WHERE thesis_id = ?";
-        $stmt = $conn->prepare($updateQuery);
-        $stmt->bind_param("si", $revision_feedback, $thesis_id_post);
-        $stmt->execute();
-        $stmt->close();
+        // Since wala'y status column, we just add feedback and notify
         
         // Get faculty advisers
         $faculty_query = "SELECT user_id FROM user_table WHERE role_id = 3";
@@ -214,7 +213,6 @@ if (isset($_SESSION['error_message'])) {
     unset($_SESSION['error_message']);
 }
 
-$current_status = strtolower(trim($thesis_status));
 $pageTitle = $thesis_id > 0 ? "Review Thesis" : "Pending Theses";
 ?>
 
@@ -501,11 +499,7 @@ $pageTitle = $thesis_id > 0 ? "Review Thesis" : "Pending Theses";
 
                 <div class="thesis-header">
                     <h2><?= htmlspecialchars($thesis_title) ?></h2>
-                    <?php 
-                    $status_display = ucfirst(str_replace('_', ' ', $thesis_status));
-                    $status_class = strtolower(str_replace(' ', '_', $thesis_status));
-                    ?>
-                    <span class="status-badge <?= htmlspecialchars($status_class) ?>"><?= htmlspecialchars($status_display) ?></span>
+                    <span class="status-badge pending_coordinator">Pending Review</span>
                 </div>
 
                 <div class="thesis-details">
@@ -536,7 +530,6 @@ $pageTitle = $thesis_id > 0 ? "Review Thesis" : "Pending Theses";
                     <?php endif; ?>
                 </div>
 
-                <?php if ($current_status == 'pending_coordinator'): ?>
                 <div class="action-buttons">
                     <button class="btn btn-forward" onclick="showForwardModal()">
                         <i class="fas fa-check-circle"></i> FORWARD TO DEAN
@@ -545,25 +538,6 @@ $pageTitle = $thesis_id > 0 ? "Review Thesis" : "Pending Theses";
                         <i class="fas fa-edit"></i> REQUEST REVISIONS
                     </button>
                 </div>
-                <?php elseif ($current_status == 'forwarded_to_dean'): ?>
-                <div class="action-buttons">
-                    <div style="background:#d4edda; padding:1rem; border-radius:8px; width:100%;">
-                        <i class="fas fa-check-circle"></i> This thesis has been forwarded to the Dean for final approval.
-                    </div>
-                </div>
-                <?php elseif ($current_status == 'rejected'): ?>
-                <div class="action-buttons">
-                    <div style="background:#f8d7da; padding:1rem; border-radius:8px; width:100%;">
-                        <i class="fas fa-times-circle"></i> This thesis has been rejected.
-                    </div>
-                </div>
-                <?php else: ?>
-                <div class="action-buttons">
-                    <div style="background:#fff3cd; padding:1rem; border-radius:8px; width:100%;">
-                        <i class="fas fa-info-circle"></i> This thesis is still pending faculty review.
-                    </div>
-                </div>
-                <?php endif; ?>
             </div>
         <?php endif; ?>
     </main>

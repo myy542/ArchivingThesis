@@ -17,11 +17,13 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
+// GET USER DATA FROM DATABASE
 $user_query = "SELECT user_id, username, email, first_name, last_name, role_id, status FROM user_table WHERE user_id = ?";
 $user_stmt = $conn->prepare($user_query);
 $user_stmt->bind_param("i", $user_id);
 $user_stmt->execute();
 $user_data = $user_stmt->get_result()->fetch_assoc();
+$user_stmt->close();
 
 if ($user_data) {
     $first_name = $user_data['first_name'];
@@ -30,6 +32,7 @@ if ($user_data) {
     $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 }
 
+// Member since - default date if no created_at
 $user_created = date('F Y');
 $check_created_column = $conn->query("SHOW COLUMNS FROM user_table LIKE 'created_at'");
 if ($check_created_column && $check_created_column->num_rows > 0) {
@@ -109,11 +112,12 @@ $dashboards = [
     6 => ['name' => 'Coordinator', 'icon' => 'fa-clipboard-list', 'color' => '#e67e22', 'folder' => 'coordinator', 'file' => 'coordinatorDashboard.php', 'role_id' => 6]
 ];
 
-// STATISTICS
+// STATISTICS - FIXED: use role_id for counting
 $stats = [];
 foreach ($dashboards as $id => $dash) {
     $result = $conn->query("SELECT COUNT(*) as c FROM user_table WHERE role_id = $id AND status = 'Active'");
-    $stats[$dash['name']] = $result->fetch_assoc()['c'];
+    $row = $result->fetch_assoc();
+    $stats[$dash['name']] = $row['c'];
 }
 $total = $conn->query("SELECT COUNT(*) as c FROM user_table WHERE status = 'Active'")->fetch_assoc()['c'];
 $stats['Total Users'] = $total;
@@ -126,10 +130,14 @@ $inactive_users = $all_users_count - $active_users;
 // MONTHLY DATA
 $monthly = array_fill(0, 12, 0);
 $months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-$has_created = $conn->query("SHOW COLUMNS FROM user_table LIKE 'created_at'")->num_rows > 0;
-if ($has_created) {
+$has_created = $conn->query("SHOW COLUMNS FROM user_table LIKE 'created_at'");
+if ($has_created && $has_created->num_rows > 0) {
     $m = $conn->query("SELECT MONTH(created_at) as mo, COUNT(*) as c FROM user_table WHERE YEAR(created_at) = YEAR(CURDATE()) GROUP BY MONTH(created_at)");
-    while ($r = $m->fetch_assoc()) $monthly[$r['mo']-1] = $r['c'];
+    if ($m && $m->num_rows > 0) {
+        while ($r = $m->fetch_assoc()) {
+            $monthly[$r['mo']-1] = $r['c'];
+        }
+    }
 }
 
 // Check if may data para sa graph
@@ -148,13 +156,20 @@ if (!$hasMonthlyData) {
 }
 
 // GET AUDIT LOGS COUNT
-$logs_count = $conn->query("SELECT COUNT(*) as c FROM audit_logs")->fetch_assoc()['c'];
+$logs_count = 0;
+$logs_result = $conn->query("SELECT COUNT(*) as c FROM audit_logs");
+if ($logs_result) {
+    $logs_count = $logs_result->fetch_assoc()['c'];
+}
 
-// GET THESES COUNT
+// GET THESES COUNT - FIXED: use thesis_table
 $theses_count = 0;
 $check_theses_table = $conn->query("SHOW TABLES LIKE 'thesis_table'");
 if ($check_theses_table && $check_theses_table->num_rows > 0) {
-    $theses_count = $conn->query("SELECT COUNT(*) as c FROM thesis_table")->fetch_assoc()['c'];
+    $theses_result = $conn->query("SELECT COUNT(*) as c FROM thesis_table");
+    if ($theses_result) {
+        $theses_count = $theses_result->fetch_assoc()['c'];
+    }
 }
 
 // ==================== NOTIFICATION SYSTEM ====================
@@ -203,7 +218,8 @@ while ($row = $notif_result->fetch_assoc()) {
 }
 $notif_list->close();
 
-$conn->close();
+// Do NOT close the connection here because we need it for the page
+// $conn->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -215,6 +231,7 @@ $conn->close();
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        /* Your existing CSS - keep as is */
         * {
             margin: 0;
             padding: 0;
@@ -1331,6 +1348,7 @@ $conn->close();
             <a href="users.php" class="nav-item"><i class="fas fa-users"></i><span>Users</span></a>
             <a href="audit_logs.php" class="nav-item"><i class="fas fa-history"></i><span>Audit Logs</span></a>
             <a href="theses.php" class="theses-link"><i class="fas fa-file-alt"></i><span>Theses</span></a>
+            <a href="backup_management.php" class="nav-item"><i class="fas fa-database"></i><span>Backup</span></a>
         </div>
         <div class="dashboard-links">
             <div class="dashboard-links-header">

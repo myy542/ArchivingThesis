@@ -42,13 +42,18 @@ $projects_result = $projects_stmt->get_result();
 
 $projects = [];
 while ($row = $projects_result->fetch_assoc()) {
+    // If status is not set, determine from is_archived
+    if (!isset($row['status']) || $row['status'] === null) {
+        $row['status'] = ($row['is_archived'] == 1) ? 'archived' : 'pending';
+    }
     $projects[] = $row;
 }
 $projects_stmt->close();
 
 // Helper functions
 function getStatusClass($status) {
-    switch (strtolower($status)) {
+    $status = strtolower((string)$status);
+    switch ($status) {
         case 'pending': return 'status-pending';
         case 'pending_coordinator': return 'status-pending-coordinator';
         case 'forwarded_to_dean': return 'status-forwarded';
@@ -60,7 +65,8 @@ function getStatusClass($status) {
 }
 
 function getStatusText($status) {
-    switch (strtolower($status)) {
+    $status = strtolower((string)$status);
+    switch ($status) {
         case 'pending': return 'Pending Faculty Review';
         case 'pending_coordinator': return 'Pending Coordinator Review';
         case 'forwarded_to_dean': return 'Forwarded to Dean';
@@ -72,7 +78,7 @@ function getStatusText($status) {
 }
 
 function calculateProgress($status, $feedback_count) {
-    $status_lower = strtolower($status);
+    $status_lower = strtolower((string)$status);
     if ($status_lower == 'archived') return 100;
     if ($status_lower == 'approved') return 100;
     if ($status_lower == 'rejected') return 0;
