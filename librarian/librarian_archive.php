@@ -2,16 +2,13 @@
 session_start();
 include("../config/db.php");
 
-// Set response header to JSON
 header('Content-Type: application/json');
 
-// Check if user is logged in and is a librarian
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'librarian') {
     echo json_encode(['success' => false, 'message' => 'Unauthorized access']);
     exit;
 }
 
-// Check if thesis_id is provided
 if (!isset($_POST['thesis_id']) || empty($_POST['thesis_id'])) {
     echo json_encode(['success' => false, 'message' => 'Thesis ID is required']);
     exit;
@@ -20,8 +17,6 @@ if (!isset($_POST['thesis_id']) || empty($_POST['thesis_id'])) {
 $thesis_id = intval($_POST['thesis_id']);
 $librarian_id = $_SESSION['user_id'];
 $current_date = date('Y-m-d H:i:s');
-
-// Get retention period and archive notes from POST
 $retention_period = isset($_POST['retention_period']) ? intval($_POST['retention_period']) : 5;
 $archive_notes = isset($_POST['archive_notes']) ? trim($_POST['archive_notes']) : '';
 
@@ -38,7 +33,6 @@ if (!$thesis) {
     exit;
 }
 
-// Check if thesis is already archived
 if ($thesis['is_archived'] == 1) {
     echo json_encode(['success' => false, 'message' => 'This thesis is already archived.']);
     exit;

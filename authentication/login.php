@@ -49,7 +49,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $redirect = null;
                     
                     // ============================================================
-                    // CORRECT ROLE MAPPING - I-ADJUST NI BASE SA IMO DATABASE
+                    // CORRECT ROLE MAPPING
                     // ============================================================
                     switch ($role_id) {
                         case 1:
@@ -129,6 +129,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Symbols+Outlined" rel="stylesheet">
+    <!-- External CSS -->
     <link rel="stylesheet" href="css/login.css">
 </head>
 <body>
@@ -205,43 +206,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         </div>
     </div>
 
+    <!-- Pass PHP variables to JavaScript -->
     <script>
-        // Password toggle
-        const loginToggle = document.getElementById('login-toggle');
-        const loginPass = document.getElementById('password');
-
-        if (loginToggle && loginPass) {
-            loginToggle.addEventListener('click', () => {
-                if (loginPass.type === 'password') {
-                    loginPass.type = 'text';
-                    loginToggle.textContent = 'visibility';
-                } else {
-                    loginPass.type = 'password';
-                    loginToggle.textContent = 'visibility_off';
-                }
-            });
-        }
-
-        // Dark mode toggle
-        const toggle = document.getElementById('themeToggle');
-        if (toggle) {
-            toggle.addEventListener('click', () => {
-                document.body.classList.toggle('dark-mode');
-                const icon = toggle.querySelector('span');
-                if (document.body.classList.contains('dark-mode')) {
-                    icon.textContent = 'light_mode';
-                    localStorage.setItem('darkMode', 'true');
-                } else {
-                    icon.textContent = 'dark_mode';
-                    localStorage.setItem('darkMode', 'false');
-                }
-            });
-            
-            if (localStorage.getItem('darkMode') === 'true') {
-                document.body.classList.add('dark-mode');
-                toggle.querySelector('span').textContent = 'light_mode';
-            }
-        }
+        window.messageData = {
+            hasMessage: <?php echo !empty($message) ? 'true' : 'false'; ?>,
+            message: '<?php echo addslashes($message); ?>',
+            messageType: '<?php echo $message_type; ?>'
+        };
     </script>
+    
+    <!-- External JavaScript -->
+    <script src="js/login.js"></script>
 </body>
 </html>

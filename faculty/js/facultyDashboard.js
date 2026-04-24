@@ -1,107 +1,175 @@
-// Faculty Dashboard JavaScript
+// DOM Elements
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+const profileWrapper = document.getElementById('profileWrapper');
+const profileDropdown = document.getElementById('profileDropdown');
+const darkModeToggle = document.getElementById('darkmode');
+const notificationIcon = document.getElementById('notificationIcon');
+const notificationDropdown = document.getElementById('notificationDropdown');
+const notificationBadge = document.getElementById('notificationBadge');
+const notificationList = document.getElementById('notificationList');
+const markAllReadBtn = document.getElementById('markAllReadBtn');
+const searchInput = document.getElementById('searchInput');
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Sidebar elements
-    const hamburger = document.getElementById('hamburgerBtn');
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    
-    // Profile elements
-    const profileWrapper = document.getElementById('profileWrapper');
-    const profileDropdown = document.getElementById('profileDropdown');
-    
-    // Theme toggle
-    const darkmodeToggle = document.getElementById('darkmode');
-    
-    // Open sidebar function
-    function openSidebar() {
-        if (sidebar) sidebar.classList.add('open');
-        if (overlay) overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
+let submissionChart = null;
+
+// Sidebar Functions
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function toggleSidebar(e) {
+    e.stopPropagation();
+    if (sidebar.classList.contains('open')) {
+        closeSidebar();
+    } else {
+        openSidebar();
     }
-    
-    // Close sidebar function
-    function closeSidebar() {
-        if (sidebar) sidebar.classList.remove('open');
-        if (overlay) overlay.classList.remove('active');
-        document.body.style.overflow = '';
+}
+
+if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (sidebar.classList.contains('open')) closeSidebar();
+        if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+        if (notificationDropdown && notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show');
     }
-    
-    // Toggle sidebar function
-    function toggleSidebar(e) {
-        if (e) e.stopPropagation();
-        if (sidebar && sidebar.classList.contains('open')) {
-            closeSidebar();
-        } else {
-            openSidebar();
+});
+
+// Close sidebar on window resize
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+});
+
+// Profile Dropdown
+if (profileWrapper && profileDropdown) {
+    profileWrapper.addEventListener('click', function(e) {
+        e.stopPropagation();
+        profileDropdown.classList.toggle('show');
+    });
+    document.addEventListener('click', function(e) {
+        if (profileDropdown.classList.contains('show') && !profileWrapper.contains(e.target)) {
+            profileDropdown.classList.remove('show');
         }
+    });
+}
+
+// Notification Dropdown
+if (notificationIcon) {
+    notificationIcon.addEventListener('click', function(e) {
+        e.stopPropagation();
+        notificationDropdown.classList.toggle('show');
+        if (profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+    });
+}
+
+document.addEventListener('click', function(e) {
+    if (notificationIcon && !notificationIcon.contains(e.target) && notificationDropdown) {
+        notificationDropdown.classList.remove('show');
     }
-    
-    // Sidebar event listeners
-    if (hamburger) {
-        hamburger.addEventListener('click', toggleSidebar);
-    }
-    
-    if (overlay) {
-        overlay.addEventListener('click', closeSidebar);
-    }
-    
-    // Profile dropdown toggle
-    if (profileWrapper && profileDropdown) {
-        profileWrapper.addEventListener('click', function(e) {
-            e.stopPropagation();
-            profileDropdown.classList.toggle('show');
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (profileDropdown.classList.contains('show') && 
-                !profileWrapper.contains(e.target)) {
-                profileDropdown.classList.remove('show');
+});
+
+// Mark Notification as Read
+function markNotificationAsRead(notifId, element) {
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'mark_read=1&notif_id=' + notifId
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            element.classList.remove('unread');
+            if (notificationBadge) {
+                let c = parseInt(notificationBadge.textContent) || 0;
+                if (c > 0) {
+                    c--;
+                    if (c === 0) {
+                        notificationBadge.textContent = '';
+                        notificationBadge.style.display = 'none';
+                        if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+                    } else {
+                        notificationBadge.textContent = c;
+                    }
+                }
             }
-        });
-    }
-    
-    // Close sidebar with Escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            if (sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function markAllAsRead() {
+    fetch(window.location.href, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'mark_all_read=1'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.querySelectorAll('.notification-item.unread').forEach(item => {
+                item.classList.remove('unread');
+            });
+            if (notificationBadge) {
+                notificationBadge.textContent = '';
+                notificationBadge.style.display = 'none';
             }
-            if (profileDropdown && profileDropdown.classList.contains('show')) {
-                profileDropdown.classList.remove('show');
+            if (markAllReadBtn) markAllReadBtn.style.display = 'none';
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+if (notificationList) {
+    notificationList.addEventListener('click', function(e) {
+        const notificationItem = e.target.closest('.notification-item');
+        if (notificationItem && !notificationItem.classList.contains('empty')) {
+            const notifId = notificationItem.dataset.id;
+            const thesisId = notificationItem.dataset.thesisId;
+            if (notifId && notificationItem.classList.contains('unread')) {
+                markNotificationAsRead(notifId, notificationItem);
+            }
+            if (thesisId) {
+                setTimeout(() => {
+                    window.location.href = 'reviewThesis.php?id=' + thesisId;
+                }, 300);
             }
         }
     });
-    
-    // Handle window resize
-    let resizeTimer;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function() {
-            if (window.innerWidth > 768 && sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
-            }
-        }, 250);
+}
+
+if (markAllReadBtn) {
+    markAllReadBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        markAllAsRead();
     });
-    
-    // Close sidebar when clicking sidebar links on mobile
-    const sideNavLinks = document.querySelectorAll('.nav-item');
-    sideNavLinks.forEach(link => {
-        link.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
-                closeSidebar();
-            }
-        });
-    });
-    
-    // Dark mode toggle
-    if (darkmodeToggle) {
-        if (localStorage.getItem('darkMode') === 'true') {
-            document.body.classList.add('dark-mode');
-            darkmodeToggle.checked = true;
-        }
-        
-        darkmodeToggle.addEventListener('change', function() {
+}
+
+if (notificationBadge && notificationBadge.textContent === '') {
+    notificationBadge.style.display = 'none';
+}
+
+// Dark Mode
+function initDarkMode() {
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) {
+        document.body.classList.add('dark-mode');
+        if (darkModeToggle) darkModeToggle.checked = true;
+    }
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', function() {
             if (this.checked) {
                 document.body.classList.add('dark-mode');
                 localStorage.setItem('darkMode', 'true');
@@ -109,65 +177,80 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.body.classList.remove('dark-mode');
                 localStorage.setItem('darkMode', 'false');
             }
+            updateChartColors();
         });
     }
+}
+
+// Chart Functions
+function initChart() {
+    const ctx = document.getElementById('submissionChart');
+    if (!ctx) return;
     
-    // Notification click
-    const notificationIcon = document.querySelector('.notification-icon');
-    if (notificationIcon) {
-        notificationIcon.addEventListener('click', function() {
-            window.location.href = 'notification.php';
-        });
-    }
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    const gridColor = isDarkMode ? '#4a5568' : '#e2e8f0';
+    const textColor = isDarkMode ? '#cbd5e1' : '#4a5568';
     
-    // Search functionality for theses table
-    const searchInput = document.querySelector('.search-area input');
-    if (searchInput) {
-        searchInput.addEventListener('keyup', function() {
-            const searchTerm = this.value.toLowerCase();
-            const tableRows = document.querySelectorAll('.theses-table tbody tr');
-            const thesisItems = document.querySelectorAll('.thesis-item');
-            
-            tableRows.forEach(row => {
-                const title = row.cells[0]?.textContent.toLowerCase() || '';
-                const student = row.cells[1]?.textContent.toLowerCase() || '';
-                
-                if (title.includes(searchTerm) || student.includes(searchTerm)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-            
-            thesisItems.forEach(item => {
-                const title = item.querySelector('.thesis-title')?.textContent.toLowerCase() || '';
-                const student = item.querySelector('.thesis-meta span:first-child')?.textContent.toLowerCase() || '';
-                
-                if (title.includes(searchTerm) || student.includes(searchTerm)) {
-                    item.style.display = 'flex';
-                } else {
-                    item.style.display = 'none';
-                }
-            });
-        });
-    }
-    
-    // Animation for cards
-    const cards = document.querySelectorAll('.stat-card, .theses-card, .submissions-card');
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.style.opacity = '1';
-                entry.target.style.transform = 'translateY(0)';
-                observer.unobserve(entry.target);
-            }
-        });
-    }, { threshold: 0.1 });
-    
-    cards.forEach(card => {
-        card.style.opacity = '0';
-        card.style.transform = 'translateY(20px)';
-        card.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
-        observer.observe(card);
+    submissionChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: window.chartData.labels,
+            datasets: [
+                { label: 'Pending', data: window.chartData.pendingData, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', borderWidth: 3, fill: true, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#f59e0b', pointBorderColor: '#fff', pointBorderWidth: 2 },
+                { label: 'Approved', data: window.chartData.approvedData, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 3, fill: true, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#10b981', pointBorderColor: '#fff', pointBorderWidth: 2 },
+                { label: 'Rejected', data: window.chartData.rejectedData, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 3, fill: true, tension: 0.4, pointRadius: 5, pointBackgroundColor: '#ef4444', pointBorderColor: '#fff', pointBorderWidth: 2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', labels: { color: textColor, font: { size: 12, weight: '600' }, usePointStyle: true, boxWidth: 10 } },
+                tooltip: { mode: 'index', intersect: false, backgroundColor: isDarkMode ? '#1f2937' : '#ffffff', titleColor: isDarkMode ? '#f3f4f6' : '#1f2937', bodyColor: isDarkMode ? '#d1d5db' : '#4b5563', borderColor: '#dc2626', borderWidth: 1, callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.raw + ' thesis/es'; } } }
+            },
+            scales: {
+                y: { beginAtZero: true, grid: { color: gridColor }, title: { display: true, text: 'Number of Theses', color: textColor, font: { weight: '600', size: 12 } }, ticks: { stepSize: 1, color: textColor, callback: function(value) { return value + ' thesis'; } } },
+                x: { grid: { color: gridColor }, title: { display: true, text: 'Month', color: textColor, font: { weight: '600', size: 12 } }, ticks: { color: textColor } }
+            },
+            interaction: { mode: 'nearest', axis: 'x', intersect: false }
+        }
     });
-});
+}
+
+function updateChartColors() {
+    if (!submissionChart) return;
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    const gridColor = isDarkMode ? '#4a5568' : '#e2e8f0';
+    const textColor = isDarkMode ? '#cbd5e1' : '#4a5568';
+    
+    submissionChart.options.scales.y.grid.color = gridColor;
+    submissionChart.options.scales.x.grid.color = gridColor;
+    submissionChart.options.scales.y.ticks.color = textColor;
+    submissionChart.options.scales.x.ticks.color = textColor;
+    submissionChart.options.scales.y.title.color = textColor;
+    submissionChart.options.scales.x.title.color = textColor;
+    submissionChart.options.plugins.legend.labels.color = textColor;
+    submissionChart.update();
+}
+
+// Search Function
+if (searchInput) {
+    searchInput.addEventListener('input', function() {
+        const term = this.value.toLowerCase();
+        const rows = document.querySelectorAll('.theses-table tbody tr');
+        rows.forEach(row => {
+            row.style.display = row.textContent.toLowerCase().includes(term) ? '' : 'none';
+        });
+    });
+}
+
+// Initialize
+function init() {
+    initDarkMode();
+    if (typeof Chart !== 'undefined' && window.chartData) {
+        initChart();
+    }
+}
+
+init();
+console.log('Faculty Dashboard Initialized');

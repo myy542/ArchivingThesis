@@ -31,6 +31,13 @@ if ($check_column->num_rows == 0) {
     $conn->query("ALTER TABLE pending_invitations ADD COLUMN invited_by_name VARCHAR(255) AFTER invited_by");
 }
 
+// Check if department column exists in user_table - if not, add it
+$check_dept_column = $conn->query("SHOW COLUMNS FROM user_table LIKE 'department'");
+if ($check_dept_column->num_rows == 0) {
+    // Add department column if it doesn't exist
+    $conn->query("ALTER TABLE user_table ADD COLUMN department VARCHAR(100) DEFAULT NULL AFTER address");
+}
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $first_name = trim($_POST['first_name'] ?? '');
     $last_name = trim($_POST['last_name'] ?? '');
@@ -41,7 +48,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $role_id = 2;
     $contact_number = trim($_POST['contact_number'] ?? '');
     $address = trim($_POST['address'] ?? '');
-    $department_id = trim($_POST['department_id'] ?? '');
+    $department = trim($_POST['department'] ?? '');  // Changed from department_id to department
     
     // Co-author invitation fields (optional)
     $invite_coauthors = trim($_POST['invite_coauthors'] ?? '');
@@ -60,7 +67,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $message = "Passwords do not match.";
     } elseif (!empty($contact_number) && !preg_match('/^[0-9]{10,11}$/', $contact_number)) {
         $message = "Invalid contact number. Must be 10-11 digits.";
-    } elseif (empty($department_id)) {
+    } elseif (empty($department)) {
         $message = "Please select a department.";
     } else {
         // Check if email exists
@@ -93,9 +100,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         } else {
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             
-            // Insert user with department_id (no birth_date)
-            $insert_user = $conn->prepare("INSERT INTO user_table (first_name, last_name, email, username, password, role_id, contact_number, address, department_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $insert_user->bind_param("sssssssss", $first_name, $last_name, $email, $username, $hashed_password, $role_id, $contact_number, $address, $department_id);
+            // Insert user with department (text field, not foreign key)
+            $insert_user = $conn->prepare("INSERT INTO user_table (first_name, last_name, email, username, password, role_id, contact_number, address, department) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $insert_user->bind_param("sssssssss", $first_name, $last_name, $email, $username, $hashed_password, $role_id, $contact_number, $address, $department);
             
             if ($insert_user->execute()) {
                 $new_user_id = $insert_user->insert_id;
@@ -168,6 +175,27 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
     }
 }
+
+// Get user login status for header
+$is_logged_in = isset($_SESSION['user_id']);
+$dashboardLink = '#';
+if ($is_logged_in) {
+    $roleQuery = "SELECT role_id FROM user_table WHERE user_id = ? LIMIT 1";
+    $stmt = $conn->prepare($roleQuery);
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $userRole = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    
+    if ($userRole) {
+        if ($userRole['role_id'] == 3) $dashboardLink = '../faculty/facultyDashboard.php';
+        elseif ($userRole['role_id'] == 2) $dashboardLink = '../student/student_dashboard.php';
+        elseif ($userRole['role_id'] == 1) $dashboardLink = '../admin/admindashboard.php';
+        elseif ($userRole['role_id'] == 6) $dashboardLink = '../coordinator/coordinatorDashboard.php';
+        elseif ($userRole['role_id'] == 4) $dashboardLink = '../departmentDeanDashboard/dean.php';
+        elseif ($userRole['role_id'] == 5) $dashboardLink = '../librarian/librarian_dashboard.php';
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -177,394 +205,29 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register | Thesis Archiving System</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0,1" />
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-        }
-
-        body {
-            background: #f0f2f5;
-            min-height: 100vh;
-            padding: 20px;
-            padding-top: 90px;
-        }
-
-        /* NAVBAR */
-        .navbar {
-            background: linear-gradient(135deg, #FE4853 0%, #732529 100%);
-            padding: 15px 0;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            width: 100%;
-            z-index: 1000;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .nav-container {
-            max-width: 1300px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 40px;
-        }
-
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            text-decoration: none;
-            color: white;
-            font-size: 1.2rem;
-            font-weight: 700;
-        }
-
-        .logo .material-symbols-outlined {
-            font-size: 28px;
-        }
-
-        .nav-links {
-            display: flex;
-            list-style: none;
-            gap: 30px;
-        }
-
-        .nav-links li a {
-            text-decoration: none;
-            color: white;
-            font-size: 1rem;
-            font-weight: 500;
-            padding: 8px 0;
-            transition: all 0.2s;
-        }
-
-        .nav-links a:hover {
-            border-bottom: 2px solid white;
-        }
-
-        .nav-links a.active {
-            font-weight: 600;
-        }
-
-        /* CONTAINER & CARD */
-        .container {
-            max-width: 700px;
-            margin: 0 auto;
-        }
-
-        .card {
-            background: white;
-            border-radius: 20px;
-            padding: 40px 45px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
-            border: 1px solid #eee;
-        }
-
-        /* HEADER */
-        h1 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #732529;
-            margin-bottom: 25px;
-            border-left: 5px solid #FE4853;
-            padding-left: 15px;
-        }
-
-        /* ALERTS */
-        .alert, .success {
-            padding: 12px 16px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 0.85rem;
-        }
-
-        .alert {
-            background: #ffe0e0;
-            border: 1px solid #ffb3b3;
-            color: #732529;
-        }
-
-        .success {
-            background: #e0ffe0;
-            border: 1px solid #b3ffb3;
-            color: #2d7a2d;
-        }
-
-        /* FORM */
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 25px;
-            margin-bottom: 5px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #732529;
-            font-size: 0.85rem;
-        }
-
-        label span {
-            color: #FE4853;
-        }
-
-        label .optional {
-            color: #888;
-            font-weight: normal;
-            font-size: 0.75rem;
-        }
-
-        input, select, textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            font-size: 0.95rem;
-            background: white;
-            transition: all 0.2s;
-        }
-
-        textarea {
-            resize: none;
-            height: 48px;
-            overflow-y: auto;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            border-color: #FE4853;
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(254, 72, 83, 0.1);
-        }
-
-        .invite-section {
-            background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-            border: 1px solid #fee2e2;
-        }
-
-        .invite-section label {
-            color: #732529;
-            margin-bottom: 8px;
-        }
-
-        .invite-note {
-            font-size: 0.7rem;
-            color: #888;
-            margin-top: 5px;
-        }
-
-        /* BUTTON */
-        .btn-register {
-            width: 100%;
-            background: #FE4853;
-            color: white;
-            border: none;
-            padding: 14px;
-            border-radius: 40px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            margin: 25px 0 15px;
-            transition: all 0.2s;
-        }
-
-        .btn-register:hover {
-            background: #732529;
-        }
-
-        /* OR SECTION */
-        .or-section {
-            text-align: center;
-            margin: 15px 0;
-            color: #999;
-            font-size: 0.8rem;
-        }
-
-        .or-section::before,
-        .or-section::after {
-            content: "";
-            display: inline-block;
-            width: 42%;
-            height: 1px;
-            background-color: #eee;
-            vertical-align: middle;
-            margin: 0 10px;
-        }
-
-        /* LOGIN LINK */
-        .login-link {
-            text-align: center;
-            font-size: 0.85rem;
-            color: #888;
-        }
-
-        .login-link a {
-            color: #FE4853;
-            font-weight: 600;
-            text-decoration: none;
-        }
-
-        .login-link a:hover {
-            text-decoration: underline;
-        }
-
-        /* THEME TOGGLE */
-        .theme-toggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 45px;
-            height: 45px;
-            background: #FE4853;
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
-
-        .theme-toggle .material-symbols-outlined {
-            font-size: 22px;
-        }
-
-        /* DARK MODE */
-        body.dark-mode {
-            background: #1a1a1a;
-        }
-
-        body.dark-mode .card {
-            background: #2d2d2d;
-            border-color: #732529;
-        }
-
-        body.dark-mode h1 {
-            color: #FE4853;
-        }
-
-        body.dark-mode label {
-            color: #FE4853;
-        }
-
-        body.dark-mode input,
-        body.dark-mode select,
-        body.dark-mode textarea {
-            background: #3d3d3d;
-            border-color: #555;
-            color: #e0e0e0;
-        }
-
-        body.dark-mode .invite-section {
-            background: #3d2a2a;
-            border-color: #732529;
-        }
-
-        body.dark-mode .alert {
-            background: #3a1a1a;
-            border-color: #732529;
-            color: #fca5a5;
-        }
-
-        body.dark-mode .success {
-            background: #1a3a2a;
-            border-color: #2d7a2d;
-            color: #86efac;
-        }
-
-        body.dark-mode .or-section::before,
-        body.dark-mode .or-section::after {
-            background-color: #732529;
-        }
-
-        body.dark-mode .theme-toggle {
-            background: #732529;
-        }
-
-        /* RESPONSIVE */
-        @media (max-width: 768px) {
-            .nav-container {
-                flex-direction: column;
-                gap: 10px;
-                padding: 0 20px;
-            }
-            
-            .nav-links {
-                gap: 20px;
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-            
-            body {
-                padding-top: 120px;
-            }
-            
-            .card {
-                padding: 25px;
-            }
-            
-            .form-row {
-                grid-template-columns: 1fr;
-                gap: 0;
-            }
-            
-            h1 {
-                font-size: 1.5rem;
-            }
-            
-            .container {
-                padding: 0 20px;
-            }
-        }
-
-        @media (max-width: 550px) {
-            .card {
-                padding: 20px;
-            }
-            
-            h1 {
-                font-size: 1.3rem;
-            }
-            
-            .nav-links {
-                gap: 12px;
-            }
-            
-            .nav-links li a {
-                font-size: 0.85rem;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="css/register.css">
 </head>
 <body>
+    <div class="theme-toggle" id="themeToggle"><i class="fas fa-moon"></i></div>
 
-    <!-- NAVBAR -->
     <nav class="navbar">
         <div class="nav-container">
             <a href="homepage.php" class="logo">
-                <span class="material-symbols-outlined">book</span>
-                Web-Based Thesis Archiving System
+                <div class="logo-icon">📚</div>
+                <span>Thesis Archive</span>
             </a>
             <ul class="nav-links">
                 <li><a href="homepage.php">Home</a></li>
-                <li><a href="browse.php">Browse Thesis</a></li>
+                <li><a href="browse.php">Browse</a></li>
                 <li><a href="about.php">About</a></li>
-                <li><a href="login.php">Login</a></li>
-                <li><a href="register.php" class="active">Register</a></li>
+                <?php if ($is_logged_in): ?>
+                    <li><a href="<?= $dashboardLink ?>">Dashboard</a></li>
+                    <li><a href="../authentication/logout.php">Logout</a></li>
+                <?php else: ?>
+                    <li><a href="login.php">Login</a></li>
+                    <li><a href="register.php" class="active">Register</a></li>
+                <?php endif; ?>
             </ul>
         </div>
     </nav>
@@ -581,7 +244,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <div class="success"><?php echo htmlspecialchars($success); ?></div>
             <?php endif; ?>
 
-            <form method="POST" autocomplete="off">
+            <form method="POST" autocomplete="off" id="registerForm">
                 <div class="form-row">
                     <div class="form-group">
                         <label>First Name <span>*</span></label>
@@ -606,28 +269,39 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 <div class="form-row">
                     <div class="form-group">
                         <label>Password <span>*</span></label>
-                        <input type="password" name="password" placeholder="Enter password (min. 6 characters)" required>
+                        <div class="input-wrapper">
+                            <input type="password" name="password" id="password" placeholder="Enter password (min. 6 characters)" required>
+                            <span class="material-symbols-outlined password-toggle" id="togglePassword">visibility_off</span>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Confirm Password <span>*</span></label>
-                        <input type="password" name="cpassword" placeholder="Confirm password" required>
+                        <div class="input-wrapper">
+                            <input type="password" name="cpassword" id="cpassword" placeholder="Confirm password" required>
+                            <span class="material-symbols-outlined password-toggle" id="toggleCPassword">visibility_off</span>
+                        </div>
                     </div>
                 </div>
 
-                <!-- DEPARTMENT SELECTION (REQUIRED) -->
+                <!-- DEPARTMENT SELECTION (REQUIRED) - Using department name instead of ID -->
                 <div class="form-group">
                     <label>Department <span>*</span></label>
-                    <select name="department_id" required>
+                    <select name="department" required>
                         <option value="">Select Department</option>
                         <?php
-                        $dept_query = "SELECT department_id, department_name FROM department_table";
+                        $dept_query = "SELECT department_name FROM department_table";
                         $dept_result = $conn->query($dept_query);
                         if ($dept_result && $dept_result->num_rows > 0) {
                             while ($dept = $dept_result->fetch_assoc()) {
-                                echo '<option value="' . $dept['department_id'] . '">' . htmlspecialchars($dept['department_name']) . '</option>';
+                                echo '<option value="' . htmlspecialchars($dept['department_name']) . '">' . htmlspecialchars($dept['department_name']) . '</option>';
                             }
                         } else {
-                            echo '<option value="">No departments available</option>';
+                            // Fallback departments if department_table is empty
+                            echo '<option value="BSIT">BS Information Technology (BSIT)</option>';
+                            echo '<option value="BSCRIM">BS Criminology (BSCRIM)</option>';
+                            echo '<option value="BSHTM">BS Hospitality Management (BSHTM)</option>';
+                            echo '<option value="BSED">BS Education (BSED)</option>';
+                            echo '<option value="BSBA">BS Business Administration (BSBA)</option>';
                         }
                         ?>
                     </select>
@@ -665,72 +339,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         </div>
     </div>
 
-    <div class="theme-toggle" id="themeToggle">
-        <span class="material-symbols-outlined">dark_mode</span>
-    </div>
-
     <script>
-        // Dark mode toggle
-        const themeToggle = document.getElementById('themeToggle');
-        const savedMode = localStorage.getItem('darkMode');
-        
-        if (savedMode === 'true') {
-            document.body.classList.add('dark-mode');
-            themeToggle.innerHTML = '<span class="material-symbols-outlined">light_mode</span>';
-        }
-        
-        themeToggle.addEventListener('click', function() {
-            document.body.classList.toggle('dark-mode');
-            const isDark = document.body.classList.contains('dark-mode');
-            localStorage.setItem('darkMode', isDark);
-            themeToggle.innerHTML = isDark ? '<span class="material-symbols-outlined">light_mode</span>' : '<span class="material-symbols-outlined">dark_mode</span>';
-        });
-        
-        // Form validation
-        const form = document.querySelector('form');
-        const password = document.querySelector('input[name="password"]');
-        const cpassword = document.querySelector('input[name="cpassword"]');
-        const contact = document.querySelector('input[name="contact_number"]');
-        const email = document.querySelector('input[name="email"]');
-        
-        if (form) {
-            form.addEventListener('submit', function(e) {
-                let errors = [];
-                
-                if (password && cpassword && password.value !== cpassword.value) {
-                    errors.push('Passwords do not match.');
-                }
-                if (password && password.value.length < 6 && password.value.length > 0) {
-                    errors.push('Password must be at least 6 characters.');
-                }
-                if (contact && contact.value) {
-                    const phoneRegex = /^[0-9]{10,11}$/;
-                    if (!phoneRegex.test(contact.value)) {
-                        errors.push('Contact number must be 10-11 digits.');
-                    }
-                }
-                if (email && email.value) {
-                    const emailRegex = /^[^\s@]+@([^\s@]+\.)+[^\s@]+$/;
-                    if (!emailRegex.test(email.value)) {
-                        errors.push('Please enter a valid email address.');
-                    }
-                }
-                
-                if (errors.length > 0) {
-                    e.preventDefault();
-                    alert(errors.join('\n'));
-                }
-            });
-        }
-        
-        // Auto-hide alerts
-        const alerts = document.querySelectorAll('.alert, .success');
-        alerts.forEach(alert => {
-            setTimeout(() => {
-                alert.style.opacity = '0';
-                setTimeout(() => alert.remove(), 300);
-            }, 5000);
-        });
+        window.messageData = {
+            hasMessage: <?php echo !empty($message) ? 'true' : 'false'; ?>,
+            message: '<?php echo addslashes($message); ?>',
+            hasSuccess: <?php echo !empty($success) ? 'true' : 'false'; ?>,
+            success: '<?php echo addslashes($success); ?>'
+        };
+        window.isLoggedIn = <?php echo $is_logged_in ? 'true' : 'false'; ?>;
     </script>
+    
+    <script src="js/register.js"></script>
 </body>
 </html>

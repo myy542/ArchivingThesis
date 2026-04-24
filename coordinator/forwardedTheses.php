@@ -17,926 +17,104 @@ $last_name = $_SESSION['last_name'] ?? '';
 $fullName = $first_name . " " . $last_name;
 $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 
-// GET COORDINATOR DATA
-$department_name = "Research Department";
-$position = "Research Coordinator";
-$assigned_date = date('F Y');
+// Get coordinator department (para exclusive by department)
+$coord_query = "SELECT department_id FROM user_table WHERE user_id = ?";
+$coord_stmt = $conn->prepare($coord_query);
+$coord_stmt->bind_param("i", $user_id);
+$coord_stmt->execute();
+$coord_result = $coord_stmt->get_result();
+$coord_data = $coord_result->fetch_assoc();
+$coordinator_dept_id = $coord_data['department_id'] ?? null;
+$coord_stmt->close();
 
-// CHECK IF THESIS_TABLE EXISTS
-$thesis_table_exists = false;
-$check_thesis = $conn->query("SHOW TABLES LIKE 'thesis_table'");
-if ($check_thesis && $check_thesis->num_rows > 0) {
-    $thesis_table_exists = true;
-}
-
-// ==================== GET FORWARDED THESES - FIXED: No status column ====================
-// Since wala'y status column, we get all theses (pending/active)
-// For coordinator, forwarded means theses that are pending (not archived)
+// GET FORWARDED THESES (may laman na ang forwarded_to_dean array)
+// Since wala pang status column, gagamit tayo ng temporary array para sa forwarded theses
+// Sa ngayon, empty muna dahil wala pang status column
 $forwardedTheses = [];
-if ($thesis_table_exists) {
-    // Get all active theses (is_archived = 0 or NULL)
-    $theses_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived 
-                     FROM thesis_table 
-                     WHERE (is_archived = 0 OR is_archived IS NULL)
-                     ORDER BY date_submitted DESC";
-    $theses_result = $conn->query($theses_query);
-    
-    if ($theses_result && $theses_result->num_rows > 0) {
-        while ($row = $theses_result->fetch_assoc()) {
-            $is_archived = $row['is_archived'] ?? 0;
-            
-            // Determine status based on is_archived
-            if ($is_archived == 1) {
-                $status = 'Archived';
-                $status_class = 'archived';
-                $status_icon = 'fa-archive';
-            } else {
-                $status = 'Under Review';
-                $status_class = 'under-review';
-                $status_icon = 'fa-spinner';
-            }
-            
-            $forwardedTheses[] = [
-                'id' => $row['thesis_id'],
-                'title' => $row['title'],
-                'author' => $row['adviser'] ?? 'Unknown',
-                'department' => $row['department'] ?? 'Unknown',
-                'year' => $row['year'] ?? 'N/A',
-                'date_forwarded' => $row['date_submitted'],
-                'status' => $status,
-                'status_class' => $status_class,
-                'status_icon' => $status_icon,
-                'raw_is_archived' => $is_archived
-            ];
-        }
-    }
-}
 
-// Count statistics
 $totalForwarded = count($forwardedTheses);
-$pendingCount = count(array_filter($forwardedTheses, function($t) { 
-    return $t['status'] == 'Under Review'; 
-}));
-$approvedCount = count(array_filter($forwardedTheses, function($t) { 
-    return $t['status'] == 'Archived'; 
-}));
+$withDeanCount = 0;
+$archivedCount = 0;
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Forwarded to Dean | Thesis Management System</title>
-    
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: #fef2f2;
-            color: #1f2937;
-            overflow-x: hidden;
-        }
-
-        /* Top Navigation - full width */
-        .top-nav {
-            position: fixed;
-            top: 0;
-            right: 0;
-            left: 0;
-            height: 70px;
-            background: white;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 32px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            z-index: 99;
-            border-bottom: 1px solid #fee2e2;
-        }
-
-        .nav-left {
-            display: flex;
-            align-items: center;
-            gap: 24px;
-        }
-
-        /* Hamburger - ALWAYS VISIBLE */
-        .hamburger {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            gap: 5px;
-            width: 40px;
-            height: 40px;
-            background: #fef2f2;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .hamburger span {
-            display: block;
-            width: 22px;
-            height: 2px;
-            background: #dc2626;
-            border-radius: 2px;
-        }
-
-        .hamburger:hover {
-            background: #fee2e2;
-        }
-
-        .logo {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #991b1b;
-        }
-
-        .logo span {
-            color: #dc2626;
-        }
-
-        .search-area {
-            display: flex;
-            align-items: center;
-            background: #fef2f2;
-            padding: 8px 16px;
-            border-radius: 40px;
-            gap: 10px;
-        }
-
-        .search-area i {
-            color: #dc2626;
-            font-size: 0.9rem;
-        }
-
-        .search-area input {
-            border: none;
-            background: none;
-            outline: none;
-            font-size: 0.85rem;
-            width: 200px;
-            color: #1f2937;
-        }
-
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            position: relative;
-        }
-
-        /* Profile */
-        .profile-wrapper {
-            position: relative;
-        }
-
-        .profile-trigger {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            padding: 5px 0;
-        }
-
-        .profile-name {
-            font-weight: 500;
-            color: #1f2937;
-            font-size: 0.9rem;
-        }
-
-        .profile-avatar {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, #dc2626, #991b1b);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        .profile-dropdown {
-            position: absolute;
-            top: 55px;
-            right: 0;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            min-width: 200px;
-            display: none;
-            overflow: hidden;
-            z-index: 100;
-            border: 1px solid #fee2e2;
-        }
-
-        .profile-dropdown.show {
-            display: block;
-            animation: fadeSlideDown 0.2s ease;
-        }
-
-        @keyframes fadeSlideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .profile-dropdown a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 18px;
-            text-decoration: none;
-            color: #1f2937;
-            transition: 0.2s;
-            font-size: 0.85rem;
-        }
-
-        .profile-dropdown a:hover {
-            background: #fef2f2;
-            color: #dc2626;
-        }
-
-        .profile-dropdown a i {
-            width: 20px;
-            color: #6b7280;
-        }
-
-        .profile-dropdown hr {
-            margin: 5px 0;
-            border-color: #fee2e2;
-        }
-
-        /* Sidebar - COLLAPSIBLE (hidden by default) */
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: -300px;
-            width: 280px;
-            height: 100%;
-            background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%);
-            display: flex;
-            flex-direction: column;
-            z-index: 1000;
-            transition: left 0.3s ease;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.05);
-        }
-
-        .sidebar.open {
-            left: 0;
-        }
-
-        .logo-container {
-            padding: 28px 24px;
-            border-bottom: 1px solid rgba(255,255,255,0.15);
-        }
-
-        .logo-container .logo {
-            color: white;
-            font-size: 1.3rem;
-        }
-
-        .logo-container .logo span {
-            color: #fecaca;
-        }
-
-        .logo-sub {
-            font-size: 0.7rem;
-            color: #fecaca;
-            margin-top: 6px;
-            letter-spacing: 1px;
-        }
-
-        .nav-menu {
-            flex: 1;
-            padding: 24px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 12px 16px;
-            border-radius: 12px;
-            text-decoration: none;
-            color: #fecaca;
-            transition: all 0.2s;
-            font-weight: 500;
-        }
-
-        .nav-item i {
-            width: 22px;
-            font-size: 1.1rem;
-        }
-
-        .nav-item:hover {
-            background: rgba(255,255,255,0.15);
-            color: white;
-            transform: translateX(5px);
-        }
-
-        .nav-item.active {
-            background: rgba(255,255,255,0.2);
-            color: white;
-        }
-
-        .nav-footer {
-            padding: 20px 16px;
-            border-top: 1px solid rgba(255,255,255,0.15);
-        }
-
-        .theme-toggle {
-            margin-bottom: 12px;
-        }
-
-        .theme-toggle input {
-            display: none;
-        }
-
-        .toggle-label {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            padding: 8px 0;
-        }
-
-        .toggle-label i {
-            font-size: 1rem;
-            color: #fecaca;
-        }
-
-        .logout-btn {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
-            text-decoration: none;
-            color: #fecaca;
-            border-radius: 10px;
-            transition: all 0.2s;
-        }
-
-        .logout-btn:hover {
-            background: rgba(255,255,255,0.15);
-            color: white;
-        }
-
-        /* Sidebar Overlay */
-        .sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.4);
-            z-index: 999;
-            display: none;
-        }
-
-        .sidebar-overlay.show {
-            display: block;
-        }
-
-        /* Main Content - full width */
-        .main-content {
-            margin-left: 0;
-            margin-top: 70px;
-            padding: 32px;
-            transition: margin-left 0.3s ease;
-        }
-
-        /* Page Header */
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 32px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        .page-header h2 {
-            font-size: 1.75rem;
-            font-weight: 700;
-            color: #991b1b;
-        }
-
-        .back-link {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            color: #dc2626;
-            text-decoration: none;
-            font-weight: 500;
-            font-size: 0.9rem;
-            padding: 8px 16px;
-            background: #fef2f2;
-            border-radius: 30px;
-            transition: all 0.2s;
-        }
-
-        .back-link:hover {
-            background: #fee2e2;
-            transform: translateX(-3px);
-        }
-
-        /* Stats Cards */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 24px;
-            margin-bottom: 32px;
-        }
-
-        .stat-card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            border: 1px solid #fee2e2;
-            transition: all 0.2s;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
-        }
-
-        .stat-icon {
-            width: 55px;
-            height: 55px;
-            border-radius: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            background: #fef2f2;
-            color: #dc2626;
-        }
-
-        .stat-content h3 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #111827;
-        }
-
-        .stat-content p {
-            font-size: 0.8rem;
-            color: #6b7280;
-            margin-top: 4px;
-        }
-
-        /* Filter Tabs */
-        .filter-tabs {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 24px;
-            flex-wrap: wrap;
-        }
-
-        .filter-btn {
-            padding: 8px 20px;
-            background: white;
-            border: 1px solid #fee2e2;
-            border-radius: 30px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: #6b7280;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .filter-btn:hover {
-            background: #fee2e2;
-            color: #dc2626;
-        }
-
-        .filter-btn.active {
-            background: #dc2626;
-            color: white;
-            border-color: #dc2626;
-        }
-
-        /* Table Styles */
-        .forwarded-list {
-            background: white;
-            border-radius: 24px;
-            border: 1px solid #fee2e2;
-            overflow: hidden;
-        }
-
-        .forwarded-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .forwarded-table th {
-            text-align: left;
-            padding: 18px 20px;
-            background: #fef2f2;
-            color: #991b1b;
-            font-weight: 600;
-            font-size: 0.85rem;
-            border-bottom: 1px solid #fee2e2;
-        }
-
-        .forwarded-table td {
-            padding: 16px 20px;
-            color: #1f2937;
-            font-size: 0.9rem;
-            border-bottom: 1px solid #fef2f2;
-            vertical-align: middle;
-        }
-
-        .forwarded-table tr:last-child td {
-            border-bottom: none;
-        }
-
-        .forwarded-table tr:hover {
-            background: #fef2f2;
-        }
-
-        /* Status Badges */
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 12px;
-            border-radius: 30px;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .status-pending {
-            background: #fef3c7;
-            color: #d97706;
-        }
-
-        .status-under-review {
-            background: #dbeafe;
-            color: #2563eb;
-        }
-
-        .status-approved {
-            background: #d1fae5;
-            color: #059669;
-        }
-
-        .status-archived {
-            background: #e2e3e5;
-            color: #383d41;
-        }
-
-        /* Action Buttons */
-        .action-buttons {
-            display: flex;
-            gap: 10px;
-        }
-
-        .btn-view {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            background: #fef2f2;
-            color: #dc2626;
-            text-decoration: none;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            transition: all 0.2s;
-        }
-
-        .btn-view:hover {
-            background: #fee2e2;
-            transform: translateY(-2px);
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-        }
-
-        .empty-state i {
-            font-size: 3rem;
-            color: #dc2626;
-            margin-bottom: 16px;
-        }
-
-        .empty-state p {
-            color: #6b7280;
-            font-size: 0.9rem;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .top-nav {
-                left: 0;
-                padding: 0 16px;
-            }
-            
-            .main-content {
-                margin-left: 0;
-                padding: 20px;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
-                gap: 16px;
-            }
-            
-            .forwarded-table {
-                display: block;
-                overflow-x: auto;
-            }
-            
-            .search-area {
-                display: none;
-            }
-            
-            .profile-name {
-                display: none;
-            }
-            
-            .action-buttons {
-                flex-direction: column;
-                gap: 8px;
-            }
-            
-            .btn-view, .btn-track {
-                justify-content: center;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .main-content {
-                padding: 16px;
-            }
-            
-            .forwarded-table th,
-            .forwarded-table td {
-                padding: 12px 16px;
-            }
-        }
-
-        /* Dark Mode */
-        body.dark-mode {
-            background: #1a1a1a;
-        }
-
-        body.dark-mode .top-nav {
-            background: #2d2d2d;
-            border-bottom-color: #991b1b;
-        }
-
-        body.dark-mode .logo {
-            color: #fecaca;
-        }
-
-        body.dark-mode .search-area {
-            background: #3d3d3d;
-        }
-
-        body.dark-mode .search-area input {
-            background: #3d3d3d;
-            color: white;
-        }
-
-        body.dark-mode .profile-name {
-            color: #fecaca;
-        }
-
-        body.dark-mode .stat-card {
-            background: #2d2d2d;
-            border-color: #991b1b;
-        }
-
-        body.dark-mode .stat-content h3 {
-            color: #fecaca;
-        }
-
-        body.dark-mode .forwarded-list {
-            background: #2d2d2d;
-            border-color: #991b1b;
-        }
-
-        body.dark-mode .forwarded-table th {
-            background: #3d3d3d;
-            color: #fecaca;
-            border-bottom-color: #991b1b;
-        }
-
-        body.dark-mode .forwarded-table td {
-            color: #e5e7eb;
-            border-bottom-color: #3d3d3d;
-        }
-
-        body.dark-mode .forwarded-table tr:hover {
-            background: #3d3d3d;
-        }
-
-        body.dark-mode .filter-btn {
-            background: #2d2d2d;
-            border-color: #991b1b;
-            color: #9ca3af;
-        }
-
-        body.dark-mode .filter-btn.active {
-            background: #dc2626;
-            color: white;
-        }
-
-        body.dark-mode .btn-view {
-            background: #3d3d3d;
-            color: #fecaca;
-        }
-
-        body.dark-mode .profile-dropdown {
-            background: #2d2d2d;
-            border-color: #991b1b;
-        }
-
-        body.dark-mode .profile-dropdown a {
-            color: #e5e7eb;
-        }
-    </style>
+    <link rel="stylesheet" href="css/forwardedTheses.css">
 </head>
 <body>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <header class="top-nav">
         <div class="nav-left">
-            <button class="hamburger" id="hamburgerBtn">
-                <span></span><span></span><span></span>
-            </button>
+            <button class="hamburger" id="hamburgerBtn"><span></span><span></span><span></span></button>
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="search-area">
-                <i class="fas fa-search"></i>
-                <input type="text" id="searchInput" placeholder="Search forwarded theses...">
-            </div>
+            <div class="search-area"><i class="fas fa-search"></i><input type="text" id="searchInput" placeholder="Search forwarded theses..."></div>
         </div>
         <div class="nav-right">
             <div class="profile-wrapper" id="profileWrapper">
-                <div class="profile-trigger">
-                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
-                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
-                </div>
-                <div class="profile-dropdown" id="profileDropdown">
-                    <a href="profile.php"><i class="fas fa-user"></i> Profile</a>
-                    <a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a>
-                    <a href="#"><i class="fas fa-cog"></i> Settings</a>
-                    <hr>
-                    <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
-                </div>
+                <div class="profile-trigger"><span class="profile-name"><?= htmlspecialchars($fullName) ?></span><div class="profile-avatar"><?= htmlspecialchars($initials) ?></div></div>
+                <div class="profile-dropdown" id="profileDropdown"><a href="profile.php"><i class="fas fa-user"></i> Profile</a><a href="editProfile.php"><i class="fas fa-edit"></i> Edit Profile</a><hr><a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></div>
             </div>
         </div>
     </header>
 
     <aside class="sidebar" id="sidebar">
-        <div class="logo-container">
-            <div class="logo">Thesis<span>Manager</span></div>
-            <div class="logo-sub">RESEARCH COORDINATOR</div>
-        </div>
-        
+        <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">RESEARCH COORDINATOR</div></div>
         <div class="nav-menu">
-            <a href="coordinatorDashboard.php" class="nav-item">
-                <i class="fas fa-th-large"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="reviewThesis.php" class="nav-item">
-                <i class="fas fa-file-alt"></i>
-                <span>Review Theses</span>
-            </a>
-            <a href="myFeedback.php" class="nav-item">
-                <i class="fas fa-comment"></i>
-                <span>My Feedback</span>
-            </a>
-            <a href="forwardedTheses.php" class="nav-item active">
-                <i class="fas fa-arrow-right"></i>
-                <span>Forwarded to Dean</span>
-            </a>
+            <a href="coordinatorDashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
+            <a href="reviewThesis.php" class="nav-item"><i class="fas fa-file-alt"></i><span>Review Theses</span></a>
+            <a href="myFeedback.php" class="nav-item"><i class="fas fa-comment"></i><span>My Feedback</span></a>
+            <a href="forwardedTheses.php" class="nav-item active"><i class="fas fa-arrow-right"></i><span>Forwarded to Dean</span></a>
         </div>
-        
         <div class="nav-footer">
-            <div class="theme-toggle">
-                <input type="checkbox" id="darkmode">
-                <label for="darkmode" class="toggle-label">
-                    <i class="fas fa-sun"></i>
-                    <i class="fas fa-moon"></i>
-                </label>
-            </div>
-            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn">
-                <i class="fas fa-sign-out-alt"></i>
-                <span>Logout</span>
-            </a>
+            <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i></label></div>
+            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a>
         </div>
     </aside>
 
     <main class="main-content">
         <div class="page-header">
             <h2>Forwarded to Dean</h2>
-            <a href="coordinatorDashboard.php" class="back-link">
-                <i class="fas fa-arrow-left"></i> Back to Dashboard
-            </a>
+            <a href="coordinatorDashboard.php" class="back-link"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
         </div>
 
-        <!-- Statistics Cards -->
         <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-arrow-right"></i></div>
-                <div class="stat-content">
-                    <h3><?= $totalForwarded ?></h3>
-                    <p>Total Theses</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-clock"></i></div>
-                <div class="stat-content">
-                    <h3><?= $pendingCount ?></h3>
-                    <p>Under Review</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-archive"></i></div>
-                <div class="stat-content">
-                    <h3><?= $approvedCount ?></h3>
-                    <p>Archived</p>
-                </div>
-            </div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-arrow-right"></i></div><div class="stat-content"><h3><?= $totalForwarded ?></h3><p>Total Theses</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-gavel"></i></div><div class="stat-content"><h3><?= $withDeanCount ?></h3><p>With Dean</p></div></div>
+            <div class="stat-card"><div class="stat-icon"><i class="fas fa-archive"></i></div><div class="stat-content"><h3><?= $archivedCount ?></h3><p>Archived</p></div></div>
         </div>
 
-        <!-- Filter Tabs -->
         <div class="filter-tabs">
             <button class="filter-btn active" data-filter="all">All</button>
-            <button class="filter-btn" data-filter="under-review">Under Review</button>
+            <button class="filter-btn" data-filter="with-dean">With Dean</button>
             <button class="filter-btn" data-filter="archived">Archived</button>
         </div>
 
-        <!-- Table List -->
         <div class="forwarded-list">
             <?php if (empty($forwardedTheses)): ?>
-                <div class="empty-state">
-                    <i class="fas fa-inbox"></i>
-                    <p>No theses found.</p>
-                </div>
+                <div class="empty-state"><i class="fas fa-inbox"></i><p>No theses forwarded to Dean yet.</p><p style="font-size:14px; margin-top:10px;">When you forward a thesis from the review page, it will appear here.</p></div>
             <?php else: ?>
                 <table class="forwarded-table" id="thesesTable">
                     <thead>
-                        <tr>
-                            <th>Thesis Title</th>
-                            <th>Author (Adviser)</th>
-                            <th>Date Submitted</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
+                        <tr><th>Thesis Title</th><th>Adviser</th><th>Department</th><th>Date Forwarded</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($forwardedTheses as $thesis): ?>
                             <tr data-status="<?= $thesis['status_class'] ?>">
                                 <td><strong><?= htmlspecialchars($thesis['title']) ?></strong></td>
-                                <td><?= htmlspecialchars($thesis['author']) ?></td>
+                                <td><?= htmlspecialchars($thesis['adviser']) ?></td>
+                                <td><?= htmlspecialchars($thesis['department']) ?> (<?= htmlspecialchars($thesis['department_code']) ?>)</td>
                                 <td><?= date('M d, Y', strtotime($thesis['date_forwarded'])) ?></td>
-                                <td>
-                                    <span class="status-badge status-<?= $thesis['status_class'] ?>">
-                                        <i class="fas <?= $thesis['status_icon'] ?>"></i>
-                                        <?= $thesis['status'] ?>
-                                    </span>
-                                </td>
-                                <td class="action-buttons">
-                                    <a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view">
-                                        <i class="fas fa-eye"></i> View
-                                    </a>
-                                 </span>
-                             </td>
+                                <td><span class="status-badge status-<?= $thesis['status_class'] ?>"><i class="fas <?= $thesis['status_icon'] ?>"></i> <?= $thesis['status'] ?></span></td>
+                                <td><a href="reviewThesis.php?id=<?= $thesis['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -945,130 +123,12 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     </main>
 
     <script>
-        // DOM Elements
-        const hamburgerBtn = document.getElementById('hamburgerBtn');
-        const sidebar = document.getElementById('sidebar');
-        const sidebarOverlay = document.getElementById('sidebarOverlay');
-        const profileWrapper = document.getElementById('profileWrapper');
-        const profileDropdown = document.getElementById('profileDropdown');
-        const darkModeToggle = document.getElementById('darkmode');
-        const searchInput = document.getElementById('searchInput');
-        const filterBtns = document.querySelectorAll('.filter-btn');
-        const tableRows = document.querySelectorAll('#thesesTable tbody tr');
-
-        // ==================== SIDEBAR FUNCTIONS ====================
-        function openSidebar() {
-            sidebar.classList.add('open');
-            sidebarOverlay.classList.add('show');
-            document.body.style.overflow = 'hidden';
-        }
-
-        function closeSidebar() {
-            sidebar.classList.remove('open');
-            sidebarOverlay.classList.remove('show');
-            document.body.style.overflow = '';
-        }
-
-        function toggleSidebar(e) {
-            e.stopPropagation();
-            if (sidebar.classList.contains('open')) {
-                closeSidebar();
-            } else {
-                openSidebar();
-            }
-        }
-
-        if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
-        if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
-
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                if (sidebar.classList.contains('open')) closeSidebar();
-                if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
-            }
-        });
-
-        window.addEventListener('resize', function() {
-            if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
-        });
-
-        // ==================== PROFILE DROPDOWN ====================
-        function toggleProfileDropdown(e) {
-            e.stopPropagation();
-            profileDropdown.classList.toggle('show');
-        }
-
-        function closeProfileDropdown(e) {
-            if (!profileWrapper.contains(e.target)) {
-                profileDropdown.classList.remove('show');
-            }
-        }
-
-        if (profileWrapper) {
-            profileWrapper.addEventListener('click', toggleProfileDropdown);
-            document.addEventListener('click', closeProfileDropdown);
-        }
-
-        // ==================== DARK MODE ====================
-        function initDarkMode() {
-            const isDark = localStorage.getItem('darkMode') === 'true';
-            if (isDark) {
-                document.body.classList.add('dark-mode');
-                if (darkModeToggle) darkModeToggle.checked = true;
-            }
-            if (darkModeToggle) {
-                darkModeToggle.addEventListener('change', function() {
-                    if (this.checked) {
-                        document.body.classList.add('dark-mode');
-                        localStorage.setItem('darkMode', 'true');
-                    } else {
-                        document.body.classList.remove('dark-mode');
-                        localStorage.setItem('darkMode', 'false');
-                    }
-                });
-            }
-        }
-
-        // ==================== FILTER FUNCTION ====================
-        function filterTable(status) {
-            tableRows.forEach(row => {
-                if (status === 'all' || row.dataset.status === status) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        }
-
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                filterBtns.forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                filterTable(this.dataset.filter);
-            });
-        });
-
-        // ==================== SEARCH FUNCTION ====================
-        if (searchInput) {
-            searchInput.addEventListener('input', function() {
-                const term = this.value.toLowerCase();
-                tableRows.forEach(row => {
-                    const title = row.cells[0]?.textContent.toLowerCase() || '';
-                    const author = row.cells[1]?.textContent.toLowerCase() || '';
-                    
-                    if (title.includes(term) || author.includes(term)) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            });
-        }
-
-        // ==================== INITIALIZE ====================
-        initDarkMode();
-        
-        console.log('Forwarded Theses Page Initialized - Using is_archived column');
+        window.userData = {
+            fullName: '<?php echo addslashes($fullName); ?>',
+            initials: '<?php echo addslashes($initials); ?>'
+        };
     </script>
+    
+    <script src="js/forwardedTheses.js"></script>
 </body>
 </html>

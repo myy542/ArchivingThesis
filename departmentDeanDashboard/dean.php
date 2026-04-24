@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role
     exit;
 }
 
-// GET LOGGED-IN USER INFO FROM SESSION
+// LOGGED-IN USER INFO
 $user_id = $_SESSION['user_id'];
 $first_name = $_SESSION['first_name'] ?? '';
 $last_name = $_SESSION['last_name'] ?? '';
@@ -21,13 +21,18 @@ $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
 // GET ACTIVE SECTION FROM URL
 $section = isset($_GET['section']) ? $_GET['section'] : 'dashboard';
 
-// GET USER DATA FROM DATABASE
-$user_query = "SELECT user_id, username, email, first_name, last_name, role_id, status FROM user_table WHERE user_id = ?";
+// GET USER DATA FROM DATABASE (with department_id)
+$user_query = "SELECT u.user_id, u.username, u.email, u.first_name, u.last_name, u.role_id, u.status, 
+                      u.department_id, d.department_name, d.department_code 
+               FROM user_table u
+               LEFT JOIN department_table d ON u.department_id = d.department_id
+               WHERE u.user_id = ?";
 $user_stmt = $conn->prepare($user_query);
 $user_stmt->bind_param("i", $user_id);
 $user_stmt->execute();
 $user_result = $user_stmt->get_result();
 $user_data = $user_result->fetch_assoc();
+$user_stmt->close();
 
 if ($user_data) {
     $first_name = $user_data['first_name'];
@@ -36,60 +41,30 @@ if ($user_data) {
     $initials = strtoupper(substr($first_name, 0, 1) . substr($last_name, 0, 1));
     $user_email = $user_data['email'];
     $username = $user_data['username'];
+    $dean_department_id = $user_data['department_id'];
+    $dean_department_name = $user_data['department_name'] ?? 'Unknown Department';
+    $dean_department_code = $user_data['department_code'] ?? 'N/A';
 }
 
-// Check if created_at column exists
-$user_created = date('F Y');
-$check_created_column = $conn->query("SHOW COLUMNS FROM user_table LIKE 'created_at'");
-if ($check_created_column && $check_created_column->num_rows > 0) {
-    $user_query_full = "SELECT created_at FROM user_table WHERE user_id = ?";
-    $user_stmt_full = $conn->prepare($user_query_full);
-    $user_stmt_full->bind_param("i", $user_id);
-    $user_stmt_full->execute();
-    $user_result_full = $user_stmt_full->get_result();
-    if ($user_row = $user_result_full->fetch_assoc()) {
-        $user_created = date('F Y', strtotime($user_row['created_at']));
-    }
-    $user_stmt_full->close();
-}
+// GET DEPARTMENT INFO BASED ON DEAN'S DEPARTMENT ID
+$department_id = $dean_department_id;
+$department_name = $dean_department_name;
+$department_code = $dean_department_code;
+$dean_since = date('F Y');
 
-// GET DEPARTMENT INFO FROM DEPARTMENT_TABLE
-$department_id = isset($_GET['dept_id']) ? intval($_GET['dept_id']) : 1;
-$department_name = "College of Arts and Sciences";
-$department_code = "CAS";
-
-$dept_query = "SELECT department_id, department_name, department_code FROM department_table WHERE department_id = ?";
-$dept_stmt = $conn->prepare($dept_query);
-$dept_stmt->bind_param("i", $department_id);
-$dept_stmt->execute();
-$dept_result = $dept_stmt->get_result();
-if ($dept_row = $dept_result->fetch_assoc()) {
-    $department_name = $dept_row['department_name'];
-    $department_code = $dept_row['department_code'];
-}
-$dept_stmt->close();
-
-$dean_since = $user_created;
-
-// CREATE NOTIFICATIONS TABLE IF NOT EXISTS - USING 'is_read'
-$check_notif_table = $conn->query("SHOW TABLES LIKE 'notifications'");
-if (!$check_notif_table || $check_notif_table->num_rows == 0) {
-    $create_notif_table = "
-        CREATE TABLE IF NOT EXISTS notifications (
-            notification_id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            thesis_id INT NULL,
-            message TEXT NOT NULL,
-            type VARCHAR(50) DEFAULT 'info',
-            link VARCHAR(255) NULL,
-            is_read TINYINT DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX (user_id),
-            INDEX (is_read)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    ";
-    $conn->query($create_notif_table);
-}
+// CREATE NOTIFICATIONS TABLE IF NOT EXISTS
+$conn->query("CREATE TABLE IF NOT EXISTS notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    thesis_id INT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(50) DEFAULT 'info',
+    link VARCHAR(255) NULL,
+    is_read TINYINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX (user_id),
+    INDEX (is_read)
+)");
 
 // Determine the correct ID column name
 $id_column = 'notification_id';
@@ -98,7 +73,7 @@ if ($check_id_col && $check_id_col->num_rows > 0) {
     $id_column = 'id';
 }
 
-// GET NOTIFICATION COUNT - using 'is_read'
+// GET NOTIFICATION COUNT - using is_read
 $notificationCount = 0;
 $notif_query = "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0";
 $notif_stmt = $conn->prepare($notif_query);
@@ -110,7 +85,7 @@ if ($notif_row = $notif_result->fetch_assoc()) {
 }
 $notif_stmt->close();
 
-// GET RECENT NOTIFICATIONS FOR DROPDOWN - using 'is_read'
+// GET RECENT NOTIFICATIONS FOR DROPDOWN
 $recentNotifications = [];
 $notif_list_query = "SELECT $id_column as id, user_id, thesis_id, message, is_read, created_at FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 5";
 $notif_list_stmt = $conn->prepare($notif_list_query);
@@ -162,42 +137,58 @@ if ($check_thesis_table && $check_thesis_table->num_rows > 0) {
     $thesis_table_exists = true;
 }
 
-// GET STATISTICS FROM DATABASE - FIXED: No 'status' column, using is_archived
+// ==================== GET STATISTICS - FILTERED BY DEAN'S DEPARTMENT ====================
 $stats = [];
 
-// Total students
-$students_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 2 AND status = 'Active'";
-$students_result = $conn->query($students_query);
+// Total students in department
+$students_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 2 AND status = 'Active' AND department_id = ?";
+$students_stmt = $conn->prepare($students_query);
+$students_stmt->bind_param("i", $department_id);
+$students_stmt->execute();
+$students_result = $students_stmt->get_result();
 $stats['total_students'] = ($students_result && $students_result->num_rows > 0) ? ($students_result->fetch_assoc())['count'] : 0;
+$students_stmt->close();
 
-// Total faculty
-$faculty_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 3 AND status = 'Active'";
-$faculty_result = $conn->query($faculty_query);
+// Total faculty in department
+$faculty_query = "SELECT COUNT(*) as count FROM user_table WHERE role_id = 3 AND status = 'Active' AND department_id = ?";
+$faculty_stmt = $conn->prepare($faculty_query);
+$faculty_stmt->bind_param("i", $department_id);
+$faculty_stmt->execute();
+$faculty_result = $faculty_stmt->get_result();
 $stats['total_faculty'] = ($faculty_result && $faculty_result->num_rows > 0) ? ($faculty_result->fetch_assoc())['count'] : 0;
+$faculty_stmt->close();
 
 if ($thesis_table_exists) {
-    // Total projects (all theses)
-    $projects_query = "SELECT COUNT(*) as count FROM thesis_table";
-    $projects_result = $conn->query($projects_query);
+    // Total projects in department (using is_archived instead of status)
+    $projects_query = "SELECT COUNT(*) as count FROM thesis_table WHERE department_id = ?";
+    $projects_stmt = $conn->prepare($projects_query);
+    $projects_stmt->bind_param("i", $department_id);
+    $projects_stmt->execute();
+    $projects_result = $projects_stmt->get_result();
     $stats['total_projects'] = ($projects_result && $projects_result->num_rows > 0) ? ($projects_result->fetch_assoc())['count'] : 0;
+    $projects_stmt->close();
     
-    // Completed projects - using is_archived = 0 (pending/active)
-    $completed_query = "SELECT COUNT(*) as count FROM thesis_table WHERE is_archived = 0";
-    $completed_result = $conn->query($completed_query);
-    $stats['completed_projects'] = ($completed_result && $completed_result->num_rows > 0) ? ($completed_result->fetch_assoc())['count'] : 0;
-    
-    // Forwarded to dean - wala tay column para ani, so 0 sa pagkakaron
-    $stats['pending_reviews'] = 0;
-    
-    // Ongoing projects - non-archived
-    $stats['ongoing_projects'] = $stats['completed_projects'];
+    // Ongoing projects (non-archived)
+    $ongoing_query = "SELECT COUNT(*) as count FROM thesis_table WHERE department_id = ? AND (is_archived = 0 OR is_archived IS NULL)";
+    $ongoing_stmt = $conn->prepare($ongoing_query);
+    $ongoing_stmt->bind_param("i", $department_id);
+    $ongoing_stmt->execute();
+    $ongoing_result = $ongoing_stmt->get_result();
+    $stats['ongoing_projects'] = ($ongoing_result && $ongoing_result->num_rows > 0) ? ($ongoing_result->fetch_assoc())['count'] : 0;
+    $ongoing_stmt->close();
     
     // Archived projects
-    $archived_query = "SELECT COUNT(*) as count FROM thesis_table WHERE is_archived = 1";
-    $archived_result = $conn->query($archived_query);
+    $archived_query = "SELECT COUNT(*) as count FROM thesis_table WHERE department_id = ? AND is_archived = 1";
+    $archived_stmt = $conn->prepare($archived_query);
+    $archived_stmt->bind_param("i", $department_id);
+    $archived_stmt->execute();
+    $archived_result = $archived_stmt->get_result();
     $stats['archived_count'] = ($archived_result && $archived_result->num_rows > 0) ? ($archived_result->fetch_assoc())['count'] : 0;
+    $archived_stmt->close();
     
-    $stats['theses_approved'] = $stats['completed_projects'];
+    $stats['theses_approved'] = $stats['ongoing_projects'];
+    $stats['pending_reviews'] = 0;
+    $stats['completed_projects'] = $stats['ongoing_projects'];
 } else {
     $stats['total_projects'] = 0;
     $stats['pending_reviews'] = 0;
@@ -207,20 +198,25 @@ if ($thesis_table_exists) {
     $stats['theses_approved'] = 0;
 }
 
-// GET FORWARDED THESES FOR DEAN REVIEW - FIXED: No status column, so none
+// ==================== GET FORWARDED THESES FOR DEAN REVIEW (WALA NAY STATUS COLUMN) ====================
 $forwarded_theses = [];
+// Since wala nay status column, ang forwarded theses kay ang mga non-archived thesis
+// I-note lang nga wala tay way ma-determine kung forwarded na ba o hindi
 
-// GET FACULTY MEMBERS
+// ==================== GET FACULTY MEMBERS IN DEPARTMENT ====================
 $faculty_members = [];
-$faculty_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 3 AND status = 'Active' ORDER BY first_name ASC";
-$faculty_result = $conn->query($faculty_query);
+$faculty_query = "SELECT user_id, first_name, last_name, email, status FROM user_table WHERE role_id = 3 AND status = 'Active' AND department_id = ? ORDER BY first_name ASC";
+$faculty_stmt = $conn->prepare($faculty_query);
+$faculty_stmt->bind_param("i", $department_id);
+$faculty_stmt->execute();
+$faculty_result = $faculty_stmt->get_result();
 if ($faculty_result && $faculty_result->num_rows > 0) {
     while ($row = $faculty_result->fetch_assoc()) {
         $project_count = 0;
         if ($thesis_table_exists) {
-            $name = $row['first_name'] . " " . $row['last_name'];
-            $proj_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE adviser = ?");
-            $proj_q->bind_param("s", $name);
+            $proj_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE adviser LIKE ? AND department_id = ?");
+            $search_name = '%' . $row['first_name'] . '%';
+            $proj_q->bind_param("si", $search_name, $department_id);
             $proj_q->execute();
             $proj_result = $proj_q->get_result();
             $project_count = $proj_result->fetch_assoc()['c'] ?? 0;
@@ -235,17 +231,21 @@ if ($faculty_result && $faculty_result->num_rows > 0) {
         ];
     }
 }
+$faculty_stmt->close();
 
-// GET STUDENTS
+// ==================== GET STUDENTS IN DEPARTMENT ====================
 $students_list = [];
-$students_query = "SELECT user_id, first_name, last_name, email, status, contact_number, address, birth_date FROM user_table WHERE role_id = 2 ORDER BY first_name ASC";
-$students_result = $conn->query($students_query);
+$students_query = "SELECT user_id, first_name, last_name, email, status, contact_number, address, birth_date FROM user_table WHERE role_id = 2 AND department_id = ? ORDER BY first_name ASC";
+$students_stmt = $conn->prepare($students_query);
+$students_stmt->bind_param("i", $department_id);
+$students_stmt->execute();
+$students_result = $students_stmt->get_result();
 if ($students_result && $students_result->num_rows > 0) {
     while ($row = $students_result->fetch_assoc()) {
         $theses_count = 0;
         if ($thesis_table_exists) {
-            $thesis_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE student_id = ?");
-            $thesis_q->bind_param("i", $row['user_id']);
+            $thesis_q = $conn->prepare("SELECT COUNT(*) as c FROM thesis_table WHERE student_id = ? AND department_id = ?");
+            $thesis_q->bind_param("ii", $row['user_id'], $department_id);
             $thesis_q->execute();
             $thesis_result = $thesis_q->get_result();
             $theses_count = $thesis_result->fetch_assoc()['c'] ?? 0;
@@ -263,35 +263,46 @@ if ($students_result && $students_result->num_rows > 0) {
         ];
     }
 }
+$students_stmt->close();
 
-// GET DEPARTMENT PROJECTS - FIXED: No status column
+// ==================== GET DEPARTMENT PROJECTS ====================
 $department_projects = [];
+$archived_projects = [];
 if ($thesis_table_exists) {
-    $projects_query = "SELECT thesis_id, title, adviser, department, year, date_submitted, is_archived FROM thesis_table ORDER BY date_submitted DESC LIMIT 10";
-    $projects_result = $conn->query($projects_query);
+    $projects_query = "SELECT t.thesis_id, t.title, t.adviser, t.year, t.date_submitted, t.is_archived,
+                              u.first_name, u.last_name, d.department_name, d.department_code
+                       FROM thesis_table t
+                       JOIN user_table u ON t.student_id = u.user_id
+                       LEFT JOIN department_table d ON t.department_id = d.department_id
+                       WHERE t.department_id = ?
+                       ORDER BY t.date_submitted DESC";
+    $projects_stmt = $conn->prepare($projects_query);
+    $projects_stmt->bind_param("i", $department_id);
+    $projects_stmt->execute();
+    $projects_result = $projects_stmt->get_result();
     if ($projects_result && $projects_result->num_rows > 0) {
         while ($row = $projects_result->fetch_assoc()) {
-            $department_projects[] = [
+            $project = [
                 'id' => $row['thesis_id'],
                 'title' => $row['title'],
-                'student' => $row['adviser'] ?? 'Unknown',
-                'adviser' => 'N/A',
-                'department' => $row['department'] ?? $department_name,
+                'student' => $row['first_name'] . ' ' . $row['last_name'],
+                'adviser' => $row['adviser'] ?? 'N/A',
+                'department' => $row['department_name'] ?? $department_name,
+                'department_code' => $row['department_code'] ?? $department_code,
                 'year' => $row['year'] ?? 'N/A',
                 'submitted' => isset($row['date_submitted']) ? date('M d, Y', strtotime($row['date_submitted'])) : date('M d, Y'),
-                'status' => ($row['is_archived'] == 1) ? 'archived' : 'pending',
-                'defense_date' => null
+                'status' => ($row['is_archived'] == 1) ? 'archived' : 'pending'
             ];
+            $department_projects[] = $project;
+            if ($project['status'] == 'archived') {
+                $archived_projects[] = $project;
+            }
         }
     }
+    $projects_stmt->close();
 }
 
-// GET ARCHIVED PROJECTS
-$archived_projects = array_filter($department_projects, function($p) {
-    return $p['status'] == 'archived';
-});
-
-// GET RECENT ACTIVITIES
+// ==================== GET RECENT ACTIVITIES ====================
 $department_activities = [];
 $check_activities = $conn->query("SHOW TABLES LIKE 'department_activities'");
 if ($check_activities && $check_activities->num_rows > 0) {
@@ -336,193 +347,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #fef2f2; color: #1f2937; overflow-x: hidden; }
-
-        .top-nav { position: fixed; top: 0; left: 0; right: 0; height: 70px; background: white; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); z-index: 99; border-bottom: 1px solid #ffcdd2; }
-        .nav-left { display: flex; align-items: center; gap: 24px; }
-        .hamburger { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 5px; width: 40px; height: 40px; background: #fef2f2; border: none; border-radius: 8px; cursor: pointer; }
-        .hamburger span { display: block; width: 22px; height: 2px; background: #dc2626; border-radius: 2px; transition: 0.3s; }
-        .hamburger:hover { background: #fee2e2; }
-        .logo { font-size: 1.3rem; font-weight: 700; color: #991b1b; }
-        .logo span { color: #dc2626; }
-        .search-area { display: flex; align-items: center; background: #fef2f2; padding: 8px 16px; border-radius: 40px; gap: 10px; }
-        .search-area i { color: #dc2626; }
-        .search-area input { border: none; background: none; outline: none; font-size: 0.85rem; width: 200px; }
-        
-        .nav-right { display: flex; align-items: center; gap: 20px; position: relative; }
-        
-        .notification-container { position: relative; }
-        .notification-icon { position: relative; cursor: pointer; width: 40px; height: 40px; background: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .notification-icon:hover { background: #fee2e2; }
-        .notification-icon i { font-size: 1.2rem; color: #dc2626; }
-        .notification-badge { position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; font-size: 0.6rem; font-weight: 600; min-width: 18px; height: 18px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 5px; }
-        
-        .notification-dropdown { position: absolute; top: 55px; right: 0; width: 380px; background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); display: none; overflow: hidden; z-index: 1000; border: 1px solid #ffcdd2; animation: fadeSlideDown 0.2s ease; }
-        .notification-dropdown.show { display: block; }
-        @keyframes fadeSlideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-        .notification-header { padding: 16px 20px; border-bottom: 1px solid #fee2e2; display: flex; justify-content: space-between; align-items: center; }
-        .notification-header h3 { font-size: 1rem; font-weight: 600; color: #991b1b; margin: 0; }
-        .mark-all-read { font-size: 0.7rem; color: #dc2626; cursor: pointer; background: none; border: none; }
-        .notification-list { max-height: 400px; overflow-y: auto; }
-        .notification-item { display: flex; gap: 12px; padding: 14px 20px; border-bottom: 1px solid #fef2f2; cursor: pointer; transition: background 0.2s; text-decoration: none; color: inherit; }
-        .notification-item:hover { background: #fef2f2; }
-        .notification-item.unread { background: #fff5f5; border-left: 3px solid #dc2626; }
-        .notification-item.empty { justify-content: center; color: #9ca3af; cursor: default; }
-        .notif-icon { width: 36px; height: 36px; background: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #dc2626; flex-shrink: 0; }
-        .notif-content { flex: 1; }
-        .notif-message { font-size: 0.8rem; color: #1f2937; margin-bottom: 4px; line-height: 1.4; }
-        .notif-time { font-size: 0.65rem; color: #9ca3af; }
-        .notification-footer { padding: 12px 20px; border-top: 1px solid #fee2e2; text-align: center; }
-        .notification-footer a { color: #dc2626; text-decoration: none; font-size: 0.8rem; }
-        
-        .profile-wrapper { position: relative; }
-        .profile-trigger { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 5px 10px; border-radius: 40px; }
-        .profile-trigger:hover { background: #fee2e2; }
-        .profile-name { font-weight: 500; font-size: 0.9rem; }
-        .profile-avatar { width: 40px; height: 40px; background: linear-gradient(135deg, #dc2626, #991b1b); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; }
-        .profile-dropdown { position: absolute; top: 55px; right: 0; background: white; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); min-width: 200px; display: none; overflow: hidden; z-index: 1000; border: 1px solid #ffcdd2; }
-        .profile-dropdown.show { display: block; }
-        .profile-dropdown a { display: flex; align-items: center; gap: 12px; padding: 12px 18px; text-decoration: none; color: #1f2937; transition: 0.2s; font-size: 0.85rem; }
-        .profile-dropdown a:hover { background: #fef2f2; color: #dc2626; }
-        .profile-dropdown hr { margin: 5px 0; border-color: #ffcdd2; }
-        
-        .sidebar { position: fixed; top: 0; left: 0; width: 280px; height: 100%; background: linear-gradient(180deg, #991b1b 0%, #dc2626 100%); display: flex; flex-direction: column; z-index: 100; transform: translateX(-100%); transition: transform 0.3s ease; box-shadow: 2px 0 10px rgba(0,0,0,0.05); }
-        .sidebar.open { transform: translateX(0); }
-        .logo-container { padding: 28px 24px; border-bottom: 1px solid rgba(255,255,255,0.15); }
-        .logo-container .logo { color: white; }
-        .logo-container .logo span { color: #fecaca; }
-        .logo-sub { font-size: 0.7rem; color: #fecaca; margin-top: 6px; }
-        .nav-menu { flex: 1; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; }
-        .nav-item { display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px; text-decoration: none; color: #fecaca; transition: all 0.2s; font-weight: 500; }
-        .nav-item i { width: 22px; }
-        .nav-item:hover { background: rgba(255,255,255,0.15); color: white; transform: translateX(5px); }
-        .nav-item.active { background: rgba(255,255,255,0.2); color: white; }
-        .nav-footer { padding: 20px 16px; border-top: 1px solid rgba(255,255,255,0.15); }
-        .theme-toggle { margin-bottom: 12px; }
-        .theme-toggle input { display: none; }
-        .toggle-label { display: flex; align-items: center; gap: 12px; cursor: pointer; }
-        .toggle-label i { font-size: 1rem; color: #fecaca; }
-        .logout-btn { display: flex; align-items: center; gap: 12px; padding: 10px 12px; text-decoration: none; color: #fecaca; border-radius: 10px; }
-        .logout-btn:hover { background: rgba(255,255,255,0.15); color: white; }
-        
-        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 99; display: none; }
-        .sidebar-overlay.show { display: block; }
-        
-        .main-content { margin-left: 0; margin-top: 70px; padding: 32px; transition: margin-left 0.3s ease; }
-        
-        .dept-banner { background: linear-gradient(135deg, #991b1b, #dc2626); border-radius: 24px; padding: 32px; margin-bottom: 32px; color: white; display: flex; justify-content: space-between; align-items: center; }
-        .dept-info h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
-        .dept-info p { opacity: 0.9; font-size: 0.9rem; }
-        .dean-info { text-align: right; }
-        .dean-name { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
-        .dean-since { font-size: 0.7rem; opacity: 0.8; }
-        
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
-        .stat-card { background: white; border-radius: 20px; padding: 24px; display: flex; align-items: center; gap: 18px; border: 1px solid #ffcdd2; transition: all 0.3s; }
-        .stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 25px rgba(220, 38, 38, 0.1); }
-        .stat-icon { width: 55px; height: 55px; background: #fef2f2; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #dc2626; }
-        .stat-details h3 { font-size: 1.8rem; font-weight: 700; color: #991b1b; margin-bottom: 5px; }
-        .stat-details p { font-size: 0.8rem; color: #6b7280; }
-        
-        .dept-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 32px; }
-        .dept-stat-card { background: white; border-radius: 20px; padding: 20px; text-align: center; border: 1px solid #ffcdd2; transition: all 0.3s; }
-        .dept-stat-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
-        .dept-stat-header { display: flex; align-items: center; justify-content: center; gap: 8px; color: #6b7280; font-size: 0.8rem; margin-bottom: 12px; }
-        .dept-stat-header i { color: #dc2626; }
-        .dept-stat-value { font-size: 2rem; font-weight: 700; color: #991b1b; margin-bottom: 5px; }
-        .dept-stat-label { font-size: 0.7rem; color: #9ca3af; }
-        
-        .charts-section { display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px; margin-bottom: 32px; }
-        .chart-card { background: white; border-radius: 24px; padding: 24px; border: 1px solid #ffcdd2; transition: all 0.2s; display: flex; flex-direction: column; }
-        .chart-card:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
-        .chart-card h3 { font-size: 1rem; font-weight: 600; color: #991b1b; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; justify-content: center; text-align: center; }
-        .chart-container { height: 300px; position: relative; width: 100%; display: flex; justify-content: center; align-items: center; }
-        .chart-container canvas { max-width: 100%; max-height: 100%; margin: 0 auto; display: block; }
-        .status-labels { display: flex; justify-content: center; gap: 24px; margin-top: 20px; flex-wrap: wrap; padding-top: 16px; border-top: 1px solid #fee2e2; }
-        .status-label-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: #6b7280; font-weight: 500; }
-        .status-color { width: 12px; height: 12px; border-radius: 50%; }
-        .status-color.pending { background: #f59e0b; }
-        .status-color.completed { background: #10b981; }
-        .status-color.archived { background: #6b7280; }
-        
-        .faculty-section { margin-bottom: 32px; }
-        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .section-title { font-size: 1.2rem; font-weight: 600; color: #991b1b; display: flex; align-items: center; gap: 10px; }
-        .view-all { color: #dc2626; text-decoration: none; font-size: 0.85rem; font-weight: 500; }
-        .faculty-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .faculty-card { background: white; border-radius: 20px; padding: 20px; border: 1px solid #ffcdd2; transition: all 0.3s; }
-        .faculty-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
-        .faculty-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
-        .faculty-avatar { width: 50px; height: 50px; background: linear-gradient(135deg, #dc2626, #991b1b); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 1.1rem; }
-        .faculty-name { font-weight: 600; color: #1f2937; margin-bottom: 4px; }
-        .faculty-spec { font-size: 0.7rem; color: #6b7280; }
-        .faculty-stats { display: flex; justify-content: space-around; text-align: center; padding-top: 15px; border-top: 1px solid #ffcdd2; }
-        .faculty-stat-value { font-size: 1.2rem; font-weight: 700; color: #dc2626; }
-        .faculty-stat-label { font-size: 0.65rem; color: #9ca3af; }
-        
-        .table-responsive { overflow-x: auto; }
-        .theses-table { width: 100%; border-collapse: collapse; }
-        .theses-table th { text-align: left; padding: 12px; color: #6b7280; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; border-bottom: 1px solid #ffcdd2; }
-        .theses-table td { padding: 12px; border-bottom: 1px solid #fef2f2; font-size: 0.85rem; }
-        .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
-        .status-dot.pending { background: #f59e0b; }
-        .status-dot.approved { background: #10b981; }
-        .status-dot.archived { background: #6b7280; }
-        
-        .btn-view { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; background: #dc2626; color: white; text-decoration: none; border-radius: 20px; font-size: 0.7rem; font-weight: 500; transition: all 0.3s; }
-        .btn-view:hover { background: #991b1b; transform: scale(1.05); }
-        
-        .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 32px; }
-        .activities-list { display: flex; flex-direction: column; gap: 12px; }
-        .activity-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #fef2f2; }
-        .activity-icon { width: 32px; height: 32px; background: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #dc2626; }
-        .activity-details { flex: 1; }
-        .activity-text { font-size: 0.85rem; color: #1f2937; margin-bottom: 4px; }
-        .activity-meta { font-size: 0.65rem; color: #9ca3af; display: flex; gap: 15px; }
-        
-        .workload-item { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #fef2f2; }
-        .workload-label { font-size: 0.85rem; color: #6b7280; }
-        .workload-value { font-weight: 600; color: #dc2626; }
-        
-        .quick-actions { display: flex; gap: 16px; flex-wrap: wrap; }
-        .quick-action-btn { background: white; border: 1px solid #ffcdd2; padding: 10px 20px; border-radius: 40px; text-decoration: none; color: #dc2626; font-size: 0.85rem; font-weight: 500; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
-        .quick-action-btn:hover { background: #dc2626; color: white; transform: translateY(-2px); }
-        
-        .empty-state { text-align: center; padding: 40px; color: #9ca3af; }
-        .empty-state i { font-size: 3rem; margin-bottom: 12px; color: #dc2626; }
-        
-        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 30px; font-size: 0.7rem; font-weight: 500; }
-        .status-badge.Active { background: #d4edda; color: #155724; }
-        .status-badge.Inactive { background: #f8d7da; color: #721c24; }
-        
-        @media (max-width: 1024px) { .stats-grid, .dept-stats, .charts-section, .bottom-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (max-width: 768px) {
-            .main-content { padding: 20px; }
-            .stats-grid, .dept-stats, .charts-section, .bottom-grid { grid-template-columns: 1fr; }
-            .search-area, .profile-name { display: none; }
-            .dept-banner { flex-direction: column; text-align: center; gap: 15px; }
-            .dean-info { text-align: center; }
-            .notification-dropdown { width: 320px; right: -10px; }
-            .chart-container { height: 250px; }
-        }
-        @media (max-width: 480px) { 
-            .notification-dropdown { width: 300px; right: -5px; }
-            .chart-container { height: 220px; }
-        }
-        
-        body.dark-mode { background: #1a1a1a; }
-        body.dark-mode .top-nav, body.dark-mode .stat-card, body.dark-mode .dept-stat-card, body.dark-mode .chart-card, body.dark-mode .faculty-card, body.dark-mode .notification-dropdown { background: #2d2d2d; border-color: #991b1b; }
-        body.dark-mode .stat-details h3, body.dark-mode .dept-stat-value, body.dark-mode .section-title, body.dark-mode .notification-header h3 { color: #fecaca; }
-        body.dark-mode .faculty-name, body.dark-mode .activity-text, body.dark-mode .notif-message { color: #e5e7eb; }
-        body.dark-mode .notification-item:hover { background: #3d3d3d; }
-        body.dark-mode .notification-item.unread { background: #3a2a2a; }
-        body.dark-mode .empty-state { color: #9ca3af; }
-        body.dark-mode .btn-view { background: #dc2626; color: white; }
-        body.dark-mode .status-badge.Active { background: #1a3a1a; color: #86efac; }
-        body.dark-mode .status-badge.Inactive { background: #3a1a1a; color: #fca5a5; }
-    </style>
+    <link rel="stylesheet" href="css/dean.css">
 </head>
 <body>
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -531,7 +356,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         <div class="nav-left">
             <button class="hamburger" id="hamburgerBtn"><span></span><span></span><span></span></button>
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="search-area"><i class="fas fa-search"></i><input type="text" placeholder="Search..."></div>
+            <div class="search-area"><i class="fas fa-search"></i><input type="text" id="searchInput" placeholder="Search..."></div>
         </div>
         <div class="nav-right">
             <div class="notification-container">
@@ -587,13 +412,13 @@ $currentPage = basename($_SERVER['PHP_SELF']);
     <aside class="sidebar" id="sidebar">
         <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">DEPARTMENT DEAN</div></div>
         <div class="nav-menu">
-            <a href="dean.php?section=dashboard&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'dashboard' ? 'active' : '' ?>"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
-            <a href="dean.php?section=department&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'department' ? 'active' : '' ?>"><i class="fas fa-building"></i><span>Department</span></a>
-            <a href="dean.php?section=faculty&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'faculty' ? 'active' : '' ?>"><i class="fas fa-users"></i><span>Faculty</span></a>
-            <a href="dean.php?section=students&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'students' ? 'active' : '' ?>"><i class="fas fa-user-graduate"></i><span>Students</span></a>
-            <a href="dean.php?section=projects&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'projects' ? 'active' : '' ?>"><i class="fas fa-project-diagram"></i><span>Projects</span></a>
-            <a href="dean.php?section=archive&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'archive' ? 'active' : '' ?>"><i class="fas fa-archive"></i><span>Archived</span></a>
-            <a href="dean.php?section=reports&dept_id=<?= $department_id ?>" class="nav-item <?= $section == 'reports' ? 'active' : '' ?>"><i class="fas fa-chart-bar"></i><span>Reports</span></a>
+            <a href="dean.php?section=dashboard" class="nav-item <?= $section == 'dashboard' ? 'active' : '' ?>"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
+            <a href="dean.php?section=department" class="nav-item <?= $section == 'department' ? 'active' : '' ?>"><i class="fas fa-building"></i><span>Department</span></a>
+            <a href="dean.php?section=faculty" class="nav-item <?= $section == 'faculty' ? 'active' : '' ?>"><i class="fas fa-users"></i><span>Faculty</span></a>
+            <a href="dean.php?section=students" class="nav-item <?= $section == 'students' ? 'active' : '' ?>"><i class="fas fa-user-graduate"></i><span>Students</span></a>
+            <a href="dean.php?section=projects" class="nav-item <?= $section == 'projects' ? 'active' : '' ?>"><i class="fas fa-project-diagram"></i><span>Projects</span></a>
+            <a href="dean.php?section=archive" class="nav-item <?= $section == 'archive' ? 'active' : '' ?>"><i class="fas fa-archive"></i><span>Archived</span></a>
+            <a href="dean.php?section=reports" class="nav-item <?= $section == 'reports' ? 'active' : '' ?>"><i class="fas fa-chart-bar"></i><span>Reports</span></a>
         </div>
         <div class="nav-footer">
             <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i></label></div>
@@ -648,7 +473,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
         </div>
 
         <div class="faculty-section">
-            <div class="section-header"><h2 class="section-title"><i class="fas fa-users"></i> Department Faculty</h2><a href="dean.php?section=faculty&dept_id=<?= $department_id ?>" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-users"></i> Department Faculty</h2><a href="dean.php?section=faculty" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
             <div class="faculty-grid">
                 <?php if (count($faculty_members) > 0): ?>
                     <?php foreach (array_slice($faculty_members, 0, 4) as $faculty): ?>
@@ -663,19 +488,18 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
 
-        <!-- RECENT DEPARTMENT PROJECTS -->
         <div class="projects-section">
-            <div class="section-header"><h2 class="section-title"><i class="fas fa-project-diagram"></i> Recent Department Projects</h2><a href="dean.php?section=projects&dept_id=<?= $department_id ?>" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
+            <div class="section-header"><h2 class="section-title"><i class="fas fa-project-diagram"></i> Recent Department Projects</h2><a href="dean.php?section=projects" class="view-all">View All <i class="fas fa-arrow-right"></i></a></div>
             <div class="table-responsive">
                 <?php if (count($department_projects) > 0): ?>
                 <table class="theses-table">
-                    <thead><tr><th>PROJECT TITLE</th><th>AUTHOR</th><th>DEPARTMENT</th><th>STATUS</th><th>ACTION</th></tr></thead>
+                    <thead><tr><th>PROJECT TITLE</th><th>AUTHOR</th><th>DEPARTMENT</th><th>STATUS</th><th>ACTION</th></thead>
                     <tbody>
                         <?php foreach (array_slice($department_projects, 0, 4) as $project): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
                             <td><?= htmlspecialchars($project['student']) ?></td>
-                            <td><?= htmlspecialchars($project['department']) ?></td>
+                            <td><?= htmlspecialchars($project['department']) ?> (<?= htmlspecialchars($project['department_code']) ?>)</span></td>
                             <td><span class="status-dot <?= $project['status'] ?>"></span><?= ucfirst($project['status']) ?></td>
                             <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
@@ -771,7 +595,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
                             <td><strong><?= htmlspecialchars($student['name']) ?></strong></td>
                             <td><?= htmlspecialchars($student['email']) ?></td>
                             <td><?= $student['theses_count'] ?></td>
-                            <td><span class="status-badge <?= $student['status'] ?>"><?= $student['status'] ?></span></td>
+                            <td><span class="status-badge <?= strtolower($student['status']) ?>"><?= $student['status'] ?></span></td>
                             <td><a href="view_student.php?id=<?= $student['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
                         <?php endforeach; ?>
@@ -801,14 +625,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="table-responsive">
                 <table class="theses-table">
                     <thead>
-                        <tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr>
+                        <tr><th>Project Title</th><th>Student</th><th>Department</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($department_projects as $project): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
                             <td><?= htmlspecialchars($project['student']) ?></td>
-                            <td><?= htmlspecialchars($project['department']) ?></td>
+                            <td><?= htmlspecialchars($project['department']) ?> (<?= htmlspecialchars($project['department_code']) ?>)</span></td>
                             <td><span class="status-dot <?= $project['status'] ?>"></span><?= ucfirst($project['status']) ?></td>
                             <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
@@ -839,14 +663,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             <div class="table-responsive">
                 <table class="theses-table">
                     <thead>
-                        <tr><th>Project Title</th><th>Author</th><th>Department</th><th>Status</th><th>Action</th></tr>
+                        <tr><th>Project Title</th><th>Student</th><th>Department</th><th>Status</th><th>Action</th></tr>
                     </thead>
                     <tbody>
                         <?php foreach ($archived_projects as $project): ?>
                         <tr>
                             <td><strong><?= htmlspecialchars($project['title']) ?></strong></td>
-                            <td><?= htmlspecialchars($project['student']) ?></td>
-                            <td><?= htmlspecialchars($project['department']) ?></td>
+                            <td><?= htmlspecialchars($project['student']) ?><td>
+                            <td><?= htmlspecialchars($project['department']) ?> (<?= htmlspecialchars($project['department_code']) ?>)</span></td>
                             <td><span class="status-dot archived"></span>Archived</span></td>
                             <td><a href="reviewThesis.php?id=<?= $project['id'] ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
@@ -912,198 +736,14 @@ $currentPage = basename($_SERVER['PHP_SELF']);
             workload_labels: <?= json_encode($workload_labels) ?>,
             workload_data: <?= json_encode($workload_data) ?>
         };
-        
-        const hamburger = document.getElementById('hamburgerBtn');
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebarOverlay');
-        const profileWrapper = document.getElementById('profileWrapper');
-        const profileDropdown = document.getElementById('profileDropdown');
-        const darkModeToggle = document.getElementById('darkmode');
-        const notificationIcon = document.getElementById('notificationIcon');
-        const notificationDropdown = document.getElementById('notificationDropdown');
-        const markAllReadBtn = document.getElementById('markAllReadBtn');
-        
-        function toggleSidebar() { sidebar.classList.toggle('open'); overlay.classList.toggle('show'); document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : ''; }
-        function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('show'); document.body.style.overflow = ''; }
-        function toggleProfileDropdown(e) { e.stopPropagation(); profileDropdown.classList.toggle('show'); if (notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show'); }
-        function closeProfileDropdown(e) { if (!profileWrapper.contains(e.target)) profileDropdown.classList.remove('show'); }
-        function toggleNotificationDropdown(e) { e.stopPropagation(); notificationDropdown.classList.toggle('show'); if (profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show'); }
-        function closeNotificationDropdown(e) { if (!notificationIcon.contains(e.target) && !notificationDropdown.contains(e.target)) notificationDropdown.classList.remove('show'); }
-        
-        function markNotificationAsRead(notifId, element) {
-            fetch(window.location.href, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'mark_read=1&notif_id=' + notifId
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    element.classList.remove('unread');
-                    const badge = document.querySelector('.notification-badge');
-                    if (badge) {
-                        let c = parseInt(badge.textContent);
-                        if (c > 0) { c--; if (c === 0) badge.style.display = 'none'; else badge.textContent = c; }
-                    }
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        }
-        
-        function markAllAsRead() {
-            fetch(window.location.href, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: 'mark_all_read=1'
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    document.querySelectorAll('.notification-item.unread').forEach(item => item.classList.remove('unread'));
-                    const badge = document.querySelector('.notification-badge');
-                    if (badge) badge.style.display = 'none';
-                    if (markAllReadBtn) markAllReadBtn.style.display = 'none';
-                }
-            })
-            .catch(error => console.error('Error:', error));
-        }
-        
-        function initNotifications() {
-            document.querySelectorAll('.notification-item').forEach(item => {
-                if (!item.classList.contains('empty')) {
-                    item.addEventListener('click', function(e) {
-                        if (e.target.closest('.notification-footer')) return;
-                        const id = this.dataset.id;
-                        if (id && this.classList.contains('unread')) markNotificationAsRead(id, this);
-                    });
-                }
-            });
-            if (markAllReadBtn) markAllReadBtn.addEventListener('click', function(e) { e.stopPropagation(); markAllAsRead(); });
-        }
-        
-        function initDarkMode() {
-            const isDark = localStorage.getItem('darkMode') === 'true';
-            if (isDark) { document.body.classList.add('dark-mode'); if (darkModeToggle) darkModeToggle.checked = true; }
-            if (darkModeToggle) {
-                darkModeToggle.addEventListener('change', function() {
-                    if (this.checked) { document.body.classList.add('dark-mode'); localStorage.setItem('darkMode', 'true'); }
-                    else { document.body.classList.remove('dark-mode'); localStorage.setItem('darkMode', 'false'); }
-                });
-            }
-        }
-        
-        function initCharts() {
-            const statusCtx = document.getElementById('projectStatusChart');
-            if (statusCtx && window.chartData) {
-                if (window.statusChartInstance) window.statusChartInstance.destroy();
-                window.statusChartInstance = new Chart(statusCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: ['Ongoing', 'Archived'],
-                        datasets: [{
-                            data: [window.chartData.status.ongoing, window.chartData.status.archived],
-                            backgroundColor: ['#f59e0b', '#6b7280'],
-                            borderWidth: 0,
-                            cutout: '60%',
-                            hoverOffset: 10,
-                            borderRadius: 8,
-                            spacing: 5
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(ctx) {
-                                        const val = ctx.raw || 0;
-                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                                        const pct = total > 0 ? Math.round((val / total) * 100) : 0;
-                                        return `${ctx.label}: ${val} (${pct}%)`;
-                                    }
-                                },
-                                backgroundColor: '#1f2937',
-                                titleColor: '#fef2f2',
-                                bodyColor: '#fef2f2',
-                                padding: 10,
-                                cornerRadius: 8
-                            }
-                        },
-                        layout: { padding: { top: 10, bottom: 10, left: 10, right: 10 } }
-                    }
-                });
-            }
-            
-            const workloadCtx = document.getElementById('workloadChart');
-            if (workloadCtx && window.chartData && window.chartData.workload_labels.length > 0) {
-                if (window.workloadChartInstance) window.workloadChartInstance.destroy();
-                const maxValue = Math.max(...window.chartData.workload_data, 1);
-                const yAxisMax = Math.ceil(maxValue * 1.2);
-                window.workloadChartInstance = new Chart(workloadCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: window.chartData.workload_labels,
-                        datasets: [{ label: 'Projects Supervised', data: window.chartData.workload_data, backgroundColor: '#dc2626', borderRadius: 6 }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        plugins: { legend: { display: false } },
-                        scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }
-                    }
-                });
-            } else if (workloadCtx) {
-                new Chart(workloadCtx, {
-                    type: 'bar',
-                    data: { labels: ['No Data'], datasets: [{ label: 'Projects Supervised', data: [0], backgroundColor: '#dc2626' }] },
-                    options: { responsive: true, maintainAspectRatio: true }
-                });
-            }
-            
-            const reportStatusCtx = document.getElementById('reportStatusChart');
-            if (reportStatusCtx && window.chartData) {
-                new Chart(reportStatusCtx, {
-                    type: 'pie',
-                    data: {
-                        labels: ['Ongoing', 'Archived'],
-                        datasets: [{ data: [window.chartData.status.ongoing, window.chartData.status.archived], backgroundColor: ['#f59e0b', '#6b7280'] }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: true }
-                });
-            }
-            
-            const reportWorkloadCtx = document.getElementById('reportWorkloadChart');
-            if (reportWorkloadCtx && window.chartData && window.chartData.workload_labels.length > 0) {
-                new Chart(reportWorkloadCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: window.chartData.workload_labels,
-                        datasets: [{ label: 'Projects Supervised', data: window.chartData.workload_data, backgroundColor: '#dc2626' }]
-                    },
-                    options: { responsive: true, maintainAspectRatio: true }
-                });
-            }
-        }
-        
-        if (hamburger) hamburger.addEventListener('click', toggleSidebar);
-        if (overlay) overlay.addEventListener('click', closeSidebar);
-        if (profileWrapper) { profileWrapper.addEventListener('click', toggleProfileDropdown); document.addEventListener('click', closeProfileDropdown); }
-        if (notificationIcon) { notificationIcon.addEventListener('click', toggleNotificationDropdown); document.addEventListener('click', closeNotificationDropdown); }
-        
-        document.addEventListener('DOMContentLoaded', function() {
-            initDarkMode();
-            initCharts();
-            initNotifications();
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    if (sidebar.classList.contains('open')) closeSidebar();
-                    if (notificationDropdown.classList.contains('show')) notificationDropdown.classList.remove('show');
-                    if (profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
-                }
-            });
-        });
+        window.userData = {
+            fullName: '<?= htmlspecialchars($fullName) ?>',
+            initials: '<?= htmlspecialchars($initials) ?>',
+            department: '<?= htmlspecialchars($department_name) ?>',
+            departmentCode: '<?= htmlspecialchars($department_code) ?>'
+        };
     </script>
+    
+    <script src="js/dean.js"></script>
 </body>
 </html>

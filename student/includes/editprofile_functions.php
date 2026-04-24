@@ -1,4 +1,5 @@
 <?php
+
 function getUserData($conn, $user_id) {
     $stmt = $conn->prepare("SELECT first_name, last_name, email, contact_number, address, birth_date, profile_picture FROM user_table WHERE user_id=?");
     $stmt->bind_param("i", $user_id);
@@ -8,9 +9,10 @@ function getUserData($conn, $user_id) {
     return $user;
 }
 
+// FIXED: Changed from 'status' to 'is_read'
 function getNotificationCount($conn, $user_id) {
     try {
-        $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND status != 'read'";
+        $notif_query = "SELECT COUNT(*) as total FROM notifications WHERE user_id = ? AND is_read = 0";
         $stmt = $conn->prepare($notif_query);
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
@@ -31,7 +33,6 @@ function handleProfileUpdate($conn, $user_id, $post, $files) {
     $birth_date  = trim($post["birth_date"] ?? "");
     $address     = trim($post["address"] ?? "");
 
-    // Validate required fields
     if ($first_name === "" || $last_name === "" || $email === "") {
         return "First name, last name, and email are required.";
     }
@@ -40,7 +41,6 @@ function handleProfileUpdate($conn, $user_id, $post, $files) {
         return "Invalid email format.";
     }
 
-    // Handle file upload
     $newFileName = null;
     if (!empty($files["profile_picture"]["name"])) {
         $uploadResult = uploadProfilePicture($files["profile_picture"], $user_id);
@@ -50,7 +50,6 @@ function handleProfileUpdate($conn, $user_id, $post, $files) {
         $newFileName = $uploadResult['filename'];
     }
 
-    // Update database
     return updateUserProfile($conn, $user_id, [
         'first_name' => $first_name,
         'last_name' => $last_name,
@@ -118,7 +117,7 @@ function updateUserProfile($conn, $user_id, $data) {
 
     if ($stmt->execute()) {
         $stmt->close();
-        return ""; // No error
+        return "";
     } else {
         $error = "Update failed: " . $stmt->error;
         $stmt->close();

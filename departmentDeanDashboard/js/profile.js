@@ -1,266 +1,208 @@
-// Profile Page JavaScript
+// DOM Elements
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+const profileWrapper = document.getElementById('profileWrapper');
+const profileDropdown = document.getElementById('profileDropdown');
+const darkModeToggle = document.getElementById('darkmode');
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Sidebar elements
-    const hamburger = document.getElementById('hamburgerBtn');
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    
-    // Profile elements
-    const profileWrapper = document.getElementById('profileWrapper');
-    const profileDropdown = document.getElementById('profileDropdown');
-    
-    // Modal elements
-    const editProfileModal = document.getElementById('editProfileModal');
-    const changePasswordModal = document.getElementById('changePasswordModal');
-    const editProfileBtn = document.getElementById('editProfileBtn');
-    const changePasswordBtn = document.getElementById('changePasswordBtn');
-    const editPersonalBtn = document.getElementById('editPersonalBtn');
-    const editBioBtn = document.getElementById('editBioBtn');
-    
-    // Open sidebar function
-    function openSidebar() {
-        if (sidebar) sidebar.classList.add('open');
-        if (overlay) overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
+// Modal Elements
+const editProfileModal = document.getElementById('editProfileModal');
+const editProfileBtn = document.getElementById('editProfileBtn');
+const editPersonalBtn = document.getElementById('editPersonalBtn');
+const editBioBtn = document.getElementById('editBioBtn');
+const modalCloseBtns = document.querySelectorAll('.modal-close');
+const cancelBtns = document.querySelectorAll('.btn-cancel');
+
+// Sidebar Functions
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function toggleSidebar(e) {
+    e.stopPropagation();
+    if (sidebar.classList.contains('open')) {
+        closeSidebar();
+    } else {
+        openSidebar();
     }
-    
-    // Close sidebar function
-    function closeSidebar() {
-        if (sidebar) sidebar.classList.remove('open');
-        if (overlay) overlay.classList.remove('active');
-        document.body.style.overflow = '';
-    }
-    
-    // Toggle sidebar function
-    function toggleSidebar(e) {
-        if (e) e.stopPropagation();
-        if (sidebar && sidebar.classList.contains('open')) {
-            closeSidebar();
-        } else {
-            openSidebar();
-        }
-    }
-    
-    // Sidebar event listeners
-    if (hamburger) {
-        hamburger.addEventListener('click', toggleSidebar);
-    }
-    
-    if (overlay) {
-        overlay.addEventListener('click', closeSidebar);
-    }
-    
-    // Profile dropdown toggle
-    if (profileWrapper && profileDropdown) {
-        profileWrapper.addEventListener('click', function(e) {
-            e.stopPropagation();
-            profileDropdown.classList.toggle('show');
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (profileDropdown.classList.contains('show') && 
-                !profileWrapper.contains(e.target)) {
-                profileDropdown.classList.remove('show');
-            }
-        });
-    }
-    
-    // Close sidebar with Escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            if (sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
-            }
-            if (profileDropdown && profileDropdown.classList.contains('show')) {
-                profileDropdown.classList.remove('show');
-            }
-            if (editProfileModal && editProfileModal.classList.contains('show')) {
-                closeModal(editProfileModal);
-            }
-            if (changePasswordModal && changePasswordModal.classList.contains('show')) {
-                closeModal(changePasswordModal);
-            }
-        }
-    });
-    
-    // Handle window resize
-    let resizeTimer;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function() {
-            if (window.innerWidth > 768 && sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
-            }
-        }, 250);
-    });
-    
-    // Close sidebar when clicking sidebar links on mobile
-    const sideNavLinks = document.querySelectorAll('.nav-item');
-    sideNavLinks.forEach(link => {
-        link.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
-                closeSidebar();
-            }
-        });
-    });
-    
-    // Modal Functions
-    function openModal(modal) {
-        if (modal) {
-            modal.classList.add('show');
-            document.body.style.overflow = 'hidden';
-        }
-    }
-    
-    function closeModal(modal) {
-        if (modal) {
-            modal.classList.remove('show');
-            document.body.style.overflow = '';
-        }
-    }
-    
-    // Edit Profile Modal
-    if (editProfileBtn) {
-        editProfileBtn.addEventListener('click', function() {
-            openModal(editProfileModal);
-        });
-    }
-    
-    if (editPersonalBtn) {
-        editPersonalBtn.addEventListener('click', function() {
-            openModal(editProfileModal);
-        });
-    }
-    
-    // Change Password Modal
-    if (changePasswordBtn) {
-        changePasswordBtn.addEventListener('click', function() {
-            openModal(changePasswordModal);
-        });
-    }
-    
-    // Edit Bio Modal (opens edit profile modal and scrolls to bio)
-    if (editBioBtn) {
-        editBioBtn.addEventListener('click', function() {
-            openModal(editProfileModal);
-            setTimeout(() => {
-                const bioTextarea = document.getElementById('editBio');
-                if (bioTextarea) {
-                    bioTextarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    bioTextarea.focus();
-                }
-            }, 100);
-        });
-    }
-    
-    // Close modals
-    const modalCloseBtns = document.querySelectorAll('.modal-close, .btn-cancel');
-    modalCloseBtns.forEach(btn => {
-        btn.addEventListener('click', function() {
-            closeModal(editProfileModal);
-            closeModal(changePasswordModal);
-        });
-    });
-    
-    // Save Profile Changes
-    const saveProfileBtn = document.querySelector('#editProfileModal .btn-save');
-    if (saveProfileBtn) {
-        saveProfileBtn.addEventListener('click', function() {
-            const newName = document.getElementById('editName').value;
-            const newEmail = document.getElementById('editEmail').value;
-            const newPhone = document.getElementById('editPhone').value;
-            const newAddress = document.getElementById('editAddress').value;
-            const newBio = document.getElementById('editBio').value;
-            
-            // Update display
-            const displayName = document.getElementById('displayName');
-            const displayEmail = document.getElementById('displayEmail');
-            const displayPhone = document.getElementById('displayPhone');
-            const displayAddress = document.getElementById('displayAddress');
-            const displayBio = document.getElementById('displayBio');
-            const profileName = document.querySelector('.profile-card h2');
-            const profileAvatar = document.querySelector('.profile-avatar-large');
-            const topNavName = document.querySelector('.profile-name');
-            
-            if (displayName) displayName.textContent = newName;
-            if (displayEmail) displayEmail.textContent = newEmail;
-            if (displayPhone) displayPhone.textContent = newPhone;
-            if (displayAddress) displayAddress.textContent = newAddress;
-            if (displayBio) displayBio.textContent = newBio;
-            if (profileName) profileName.textContent = newName;
-            if (topNavName) topNavName.textContent = newName;
-            
-            // Update avatar initials
-            if (profileAvatar) {
-                const initials = newName.split(' ').map(n => n[0]).join('').toUpperCase();
-                profileAvatar.textContent = initials;
-                const navAvatar = document.querySelector('.profile-avatar');
-                if (navAvatar) navAvatar.textContent = initials;
-            }
-            
-            alert('Profile updated successfully!');
-            closeModal(editProfileModal);
-        });
-    }
-    
-    // Save Password Changes
-    const savePasswordBtn = document.querySelector('#changePasswordModal .btn-save');
-    if (savePasswordBtn) {
-        savePasswordBtn.addEventListener('click', function() {
-            const currentPassword = document.getElementById('currentPassword').value;
-            const newPassword = document.getElementById('newPassword').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
-            
-            if (!currentPassword || !newPassword || !confirmPassword) {
-                alert('Please fill in all fields');
-                return;
-            }
-            
-            if (newPassword !== confirmPassword) {
-                alert('New passwords do not match!');
-                return;
-            }
-            
-            if (newPassword.length < 6) {
-                alert('Password must be at least 6 characters long');
-                return;
-            }
-            
-            alert('Password changed successfully!');
-            closeModal(changePasswordModal);
-            
-            // Clear form
-            document.getElementById('currentPassword').value = '';
-            document.getElementById('newPassword').value = '';
-            document.getElementById('confirmPassword').value = '';
-        });
-    }
-    
-    // Click outside modal to close
-    window.addEventListener('click', function(e) {
-        if (e.target === editProfileModal) {
-            closeModal(editProfileModal);
-        }
-        if (e.target === changePasswordModal) {
-            closeModal(changePasswordModal);
-        }
-    });
-    
-    // Notification click
-    const notificationIcon = document.querySelector('.notification-icon');
-    if (notificationIcon) {
-        notificationIcon.addEventListener('click', function() {
-            alert('You have 4 new notifications');
-        });
-    }
-    
-    // View all activities
-    const viewAllLink = document.querySelector('.view-all');
-    if (viewAllLink) {
-        viewAllLink.addEventListener('click', function(e) {
-            e.preventDefault();
-            alert('View all activities feature coming soon!');
-        });
+}
+
+if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (sidebar.classList.contains('open')) closeSidebar();
+        if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
+        if (editProfileModal && editProfileModal.classList.contains('show')) closeModal();
     }
 });
+
+// Close sidebar on window resize (mobile to desktop)
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+});
+
+// Profile Dropdown
+function toggleProfileDropdown(e) {
+    e.stopPropagation();
+    profileDropdown.classList.toggle('show');
+}
+
+function closeProfileDropdown(e) {
+    if (!profileWrapper.contains(e.target)) {
+        profileDropdown.classList.remove('show');
+    }
+}
+
+if (profileWrapper) {
+    profileWrapper.addEventListener('click', toggleProfileDropdown);
+    document.addEventListener('click', closeProfileDropdown);
+}
+
+// Dark Mode
+function initDarkMode() {
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) {
+        document.body.classList.add('dark-mode');
+        if (darkModeToggle) darkModeToggle.checked = true;
+    }
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', function() {
+            if (this.checked) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('darkMode', 'false');
+            }
+        });
+    }
+}
+
+// Modal Functions
+function openModal() {
+    // Populate modal fields with current data
+    document.getElementById('editName').value = document.getElementById('displayName').textContent;
+    document.getElementById('editEmail').value = document.getElementById('displayEmail').textContent;
+    document.getElementById('editPhone').value = document.getElementById('displayPhone').textContent;
+    document.getElementById('editAddress').value = document.getElementById('displayAddress').textContent;
+    
+    const birthDateText = document.getElementById('displayBirthDate').textContent;
+    if (birthDateText !== 'Not provided') {
+        const dateObj = new Date(birthDateText);
+        if (!isNaN(dateObj.getTime())) {
+            const year = dateObj.getFullYear();
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            document.getElementById('editBirthDate').value = `${year}-${month}-${day}`;
+        }
+    } else {
+        document.getElementById('editBirthDate').value = '';
+    }
+    
+    document.getElementById('editBio').value = document.getElementById('displayBio').textContent;
+    editProfileModal.classList.add('show');
+}
+
+function closeModal() {
+    editProfileModal.classList.remove('show');
+}
+
+function saveProfile() {
+    const form = document.getElementById('editProfileForm');
+    const formData = new FormData(form);
+    
+    fetch('update_profile.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update display values
+            document.getElementById('displayName').textContent = document.getElementById('editName').value;
+            document.getElementById('displayEmail').textContent = document.getElementById('editEmail').value;
+            document.getElementById('displayPhone').textContent = document.getElementById('editPhone').value;
+            document.getElementById('displayAddress').textContent = document.getElementById('editAddress').value;
+            
+            const birthDate = document.getElementById('editBirthDate').value;
+            if (birthDate) {
+                const dateObj = new Date(birthDate);
+                if (!isNaN(dateObj.getTime())) {
+                    document.getElementById('displayBirthDate').textContent = dateObj.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                    });
+                }
+            } else {
+                document.getElementById('displayBirthDate').textContent = 'Not provided';
+            }
+            
+            document.getElementById('displayBio').textContent = document.getElementById('editBio').value;
+            
+            // Update profile card name
+            const profileCardName = document.querySelector('.profile-card h2');
+            if (profileCardName) {
+                profileCardName.textContent = document.getElementById('editName').value;
+            }
+            
+            // Update top bar name
+            const profileNameSpan = document.querySelector('.profile-name');
+            if (profileNameSpan) {
+                profileNameSpan.textContent = document.getElementById('editName').value;
+            }
+            
+            // Update initials if name changed
+            const fullName = document.getElementById('editName').value;
+            const nameParts = fullName.split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts[nameParts.length - 1] || '';
+            const newInitials = (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
+            
+            const profileAvatar = document.querySelector('.profile-avatar');
+            const profileAvatarLarge = document.querySelector('.profile-avatar-large');
+            if (profileAvatar) profileAvatar.textContent = newInitials;
+            if (profileAvatarLarge) profileAvatarLarge.textContent = newInitials;
+            
+            alert('Profile updated successfully!');
+            closeModal();
+        } else {
+            alert('Error: ' + (data.message || 'Failed to update profile'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Failed to update profile. Please try again.');
+    });
+}
+
+// Event listeners for modals
+if (editProfileBtn) editProfileBtn.addEventListener('click', openModal);
+if (editPersonalBtn) editPersonalBtn.addEventListener('click', openModal);
+if (editBioBtn) editBioBtn.addEventListener('click', openModal);
+
+modalCloseBtns.forEach(btn => btn.addEventListener('click', closeModal));
+cancelBtns.forEach(btn => btn.addEventListener('click', closeModal));
+
+// Close modal when clicking outside
+window.addEventListener('click', function(e) {
+    if (e.target === editProfileModal) {
+        closeModal();
+    }
+});
+
+// Initialize
+initDarkMode();
+console.log('Dean Profile Page Initialized');

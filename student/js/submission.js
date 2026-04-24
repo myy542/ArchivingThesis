@@ -1,127 +1,150 @@
-// Dark mode toggle
-const toggle = document.getElementById('darkmode');
-if (toggle) {
-  toggle.addEventListener('change', () => {
-    document.body.classList.toggle('dark-mode');
-    localStorage.setItem('darkMode', toggle.checked);
-  });
-  if (localStorage.getItem('darkMode') === 'true') {
-    toggle.checked = true;
-    document.body.classList.add('dark-mode');
-  }
-}
-
-// Avatar dropdown
-const avatarBtn = document.getElementById('avatarBtn');
-const dropdownMenu = document.getElementById('dropdownMenu');
-
-if (avatarBtn) {
-  avatarBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    dropdownMenu.classList.toggle('show');
-  });
-}
-
-window.addEventListener('click', function() {
-  if (dropdownMenu) dropdownMenu.classList.remove('show');
-});
-
-if (dropdownMenu) {
-  dropdownMenu.addEventListener('click', function(e) {
-    e.stopPropagation();
-  });
-}
-
-// Mobile menu toggle
-const hamburgerBtn = document.getElementById('hamburgerBtn');
+// DOM Elements
+const darkToggle = document.getElementById('darkmode');
 const sidebar = document.getElementById('sidebar');
 const overlay = document.getElementById('overlay');
-
-function toggleSidebar() {
-  sidebar.classList.toggle('show');
-  overlay.classList.toggle('show');
-  
-  const icon = hamburgerBtn?.querySelector('i');
-  if (icon) {
-    if (sidebar.classList.contains('show')) {
-      icon.classList.remove('fa-bars');
-      icon.classList.add('fa-times');
-    } else {
-      icon.classList.remove('fa-times');
-      icon.classList.add('fa-bars');
-    }
-  }
-}
-
-if (hamburgerBtn) {
-  hamburgerBtn.addEventListener('click', toggleSidebar);
-}
-
-if (overlay) {
-  overlay.addEventListener('click', function() {
-    sidebar.classList.remove('show');
-    overlay.classList.remove('show');
-    const icon = hamburgerBtn?.querySelector('i');
-    if (icon) {
-      icon.classList.remove('fa-times');
-      icon.classList.add('fa-bars');
-    }
-  });
-}
-
-// Close sidebar on nav link click (mobile)
-const navLinks = document.querySelectorAll('.nav-link');
-navLinks.forEach(link => {
-  link.addEventListener('click', function() {
-    if (window.innerWidth <= 768) {
-      sidebar.classList.remove('show');
-      overlay.classList.remove('show');
-      const icon = hamburgerBtn?.querySelector('i');
-      if (icon) {
-        icon.classList.remove('fa-times');
-        icon.classList.add('fa-bars');
-      }
-    }
-  });
-});
-
-// Form submission handling
-const form = document.getElementById('submissionForm');
-const submitBtn = document.getElementById('submitBtn');
-
-if (form) {
-  form.addEventListener('submit', function() {
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
-  });
-}
-
-// File input validation
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const mobileBtn = document.getElementById('mobileMenuBtn');
+const avatarBtn = document.getElementById('avatarBtn');
+const dropdownMenu = document.getElementById('dropdownMenu');
 const fileInput = document.getElementById('manuscript');
-if (fileInput) {
-  fileInput.addEventListener('change', function() {
-    const file = this.files[0];
-    if (file) {
-      const fileName = file.name;
-      const fileExt = fileName.split('.').pop().toLowerCase();
-      
-      if (fileExt !== 'pdf') {
-        alert('Please select a PDF file.');
-        this.value = '';
-      }
-      
-      const maxSize = 10 * 1024 * 1024; // 10MB
-      if (file.size > maxSize) {
-        alert('File size must not exceed 10MB.');
-        this.value = '';
-      }
+const fileNameSpan = document.getElementById('file-name');
+
+// Dark Mode
+if (darkToggle) {
+    darkToggle.addEventListener('change', () => {
+        document.body.classList.toggle('dark-mode');
+        localStorage.setItem('darkMode', darkToggle.checked);
+    });
+    if (localStorage.getItem('darkMode') === 'true') {
+        darkToggle.checked = true;
+        document.body.classList.add('dark-mode');
     }
-  });
 }
 
-// Confirm clear form
-document.querySelector('button[type="reset"]')?.addEventListener('click', function(e) {
-  if (!confirm('Are you sure you want to clear the form?')) {
-    e.preventDefault();
-  }
+// Sidebar toggle
+function toggleSidebar() {
+    sidebar.classList.toggle('show');
+    overlay.classList.toggle('show');
+}
+
+if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+if (mobileBtn) mobileBtn.addEventListener('click', toggleSidebar);
+if (overlay) overlay.addEventListener('click', toggleSidebar);
+
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && sidebar.classList.contains('show')) {
+        toggleSidebar();
+    }
 });
+
+// Avatar Dropdown
+if (avatarBtn && dropdownMenu) {
+    avatarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownMenu.classList.toggle('show');
+    });
+}
+
+document.addEventListener('click', (e) => {
+    if (dropdownMenu && !avatarBtn?.contains(e.target)) {
+        dropdownMenu.classList.remove('show');
+    }
+});
+
+// File input display
+if (fileInput && fileNameSpan) {
+    fileInput.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            fileNameSpan.innerHTML = '<i class="fas fa-check-circle"></i> Selected: ' + this.files[0].name;
+            fileNameSpan.style.color = '#10b981';
+        } else {
+            fileNameSpan.innerHTML = '';
+        }
+    });
+}
+
+// Email validation helper
+function isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+// Validate co-author emails
+function validateCoAuthorEmails(emailsString) {
+    if (!emailsString.trim()) return { valid: true, errors: [] };
+    
+    const emails = emailsString.split(',').map(e => e.trim()).filter(e => e);
+    const errors = [];
+    
+    emails.forEach(email => {
+        if (!isValidEmail(email)) {
+            errors.push(`"${email}" is not a valid email address`);
+        }
+    });
+    
+    return { valid: errors.length === 0, errors };
+}
+
+// Form validation
+const submissionForm = document.getElementById('submissionForm');
+if (submissionForm) {
+    submissionForm.addEventListener('submit', function(e) {
+        const title = document.getElementById('title');
+        const abstract = document.getElementById('abstract');
+        const file = document.getElementById('manuscript');
+        const inviteEmails = document.getElementById('invite_emails');
+        
+        // Validate title
+        if (title && title.value.trim().length < 5) {
+            e.preventDefault();
+            alert('Thesis title must be at least 5 characters.');
+            title.focus();
+            return false;
+        }
+        
+        // Validate abstract
+        if (abstract && abstract.value.trim().length < 50) {
+            e.preventDefault();
+            alert('Abstract must be at least 50 characters.');
+            abstract.focus();
+            return false;
+        }
+        
+        // Validate file
+        if (file && (!file.files || file.files.length === 0)) {
+            e.preventDefault();
+            alert('Please select a manuscript file (PDF).');
+            return false;
+        }
+        
+        if (file && file.files.length > 0) {
+            const fileType = file.files[0].type;
+            if (fileType !== 'application/pdf') {
+                e.preventDefault();
+                alert('Only PDF files are allowed.');
+                return false;
+            }
+            
+            const fileSize = file.files[0].size;
+            if (fileSize > 10 * 1024 * 1024) {
+                e.preventDefault();
+                alert('File size must not exceed 10MB.');
+                return false;
+            }
+        }
+        
+        // Validate co-author emails (optional but if provided should be valid)
+        if (inviteEmails && inviteEmails.value.trim()) {
+            const emailValidation = validateCoAuthorEmails(inviteEmails.value);
+            if (!emailValidation.valid) {
+                e.preventDefault();
+                alert('Invalid email addresses found:\n' + emailValidation.errors.join('\n'));
+                inviteEmails.focus();
+                return false;
+            }
+        }
+    });
+}
+
+console.log('Submission Page Initialized - Department Exclusive Notifications & Co-author Email Invitations');

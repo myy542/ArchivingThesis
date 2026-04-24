@@ -1,34 +1,37 @@
-<?php
-// test_email.php - Ibutang ni sa student folder
-require_once __DIR__ . '/../config/smtp_config.php';
 
-echo "<h2>Testing Email Configuration</h2>";
-echo "<p>Using Gmail: raganas13@gmail.com</p>";
-echo "<p>App Password: [HIDDEN]</p>";
+<?php
+// test_smtp.php - Ibutang ni sa STUDENT folder
+require_once __DIR__ . '/../config/smtp_config.php';  // Add __DIR__ . '/../'
+
+echo "<h2>SMTP Connection Test</h2>";
+
+// Test SMTP connection
+$host = 'smtp.gmail.com';
+$port = 587;
+
+echo "Testing connection to $host:$port...<br>";
+
+$connection = @fsockopen($host, $port, $errno, $errstr, 10);
+
+if ($connection) {
+    echo "✅ Connection successful!<br>";
+    fclose($connection);
+} else {
+    echo "❌ Connection failed: $errstr ($errno)<br>";
+}
+
 echo "<hr>";
 
-$email = new EmailSender();
-
-// I-send sa imong kaugalingon nga email
-$result = $email->sendThesisSubmission(
-    'mylenesellar13@gmail.com',  // Ang email nga imong gi-invite
-    'Test Student Raganas',
-    'Test Thesis Title - Email Test',
-    '999',
-    'BSIT'
-);
-
-if ($result) {
-    echo "<p style='color: green; font-weight: bold;'>✅ SUCCESS! Email sent successfully!</p>";
-    echo "<p>Check your Gmail inbox or spam folder.</p>";
+// Test DNS
+echo "Testing DNS resolution...<br>";
+$ip = gethostbyname('smtp.gmail.com');
+if ($ip != 'smtp.gmail.com') {
+    echo "✅ DNS resolved: $ip<br>";
 } else {
-    echo "<p style='color: red; font-weight: bold;'>❌ FAILED! Could not send email.</p>";
-    echo "<p>Possible issues:</p>";
-    echo "<ul>";
-    echo "<li>Wrong Gmail username</li>";
-    echo "<li>Wrong App Password</li>";
-    echo "<li>2-Step Verification not enabled</li>";
-    echo "<li>No internet connection</li>";
-    echo "</ul>";
+    echo "❌ DNS resolution failed<br>";
 }
+
+echo "<hr>";
+echo "If both tests passed, the issue is with your Gmail credentials.<br>";
+echo "If connection failed, check your internet/firewall.";
 ?>

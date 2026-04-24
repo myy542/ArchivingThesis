@@ -1,0 +1,103 @@
+/* Feedback Form Container */
+.feedback-form-container {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    margin-top: 1rem;
+}
+
+.feedback-form-container p {
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+.form-group textarea:focus {
+    outline: none;
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.btn-submit {
+    background: #dc2626;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+}
+
+.btn-submit:hover {
+    background: #991b1b;
+    transform: translateY(-2px);
+}
+
+.btn-cancel {
+    background: #f3f4f6;
+    color: #6b7280;
+    text-decoration: none;
+    padding: 0.6rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-cancel:hover {
+    background: #e5e7eb;
+}
+
+/* Dark Mode */
+body.dark-mode .feedback-form-container {
+    background: #3a3a3a;
+}
+
+body.dark-mode .form-group label {
+    color: #e5e7eb;
+}
+
+body.dark-mode .form-group textarea {
+    background: #4a4a4a;
+    border-color: #6E6E6E;
+    color: #e0e0e0;
+}
+
+body.dark-mode .btn-cancel {
+    background: #4a4a4a;
+    color: #e5e7eb;
+}
+
+body.dark-mode .btn-cancel:hover {
+    background: #5a5a5a;
+}

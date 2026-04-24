@@ -12,7 +12,6 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 $notif_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
 if ($action == 'accept' && $notif_id > 0) {
-    // Get the notification details
     $notifQuery = "SELECT thesis_id, message FROM notifications WHERE notification_id = ? AND user_id = ?";
     $notifStmt = $conn->prepare($notifQuery);
     $notifStmt->bind_param("ii", $notif_id, $user_id);
@@ -23,7 +22,6 @@ if ($action == 'accept' && $notif_id > 0) {
     if ($notif && $notif['thesis_id']) {
         $thesis_id = $notif['thesis_id'];
         
-        // Check if already a collaborator
         $checkCollab = $conn->prepare("SELECT * FROM thesis_collaborators WHERE thesis_id = ? AND user_id = ?");
         $checkCollab->bind_param("ii", $thesis_id, $user_id);
         $checkCollab->execute();
@@ -31,20 +29,17 @@ if ($action == 'accept' && $notif_id > 0) {
         $checkCollab->close();
         
         if (!$existing) {
-            // Add as collaborator
             $collabQuery = "INSERT INTO thesis_collaborators (thesis_id, user_id, role) VALUES (?, ?, 'co-author')";
             $collabStmt = $conn->prepare($collabQuery);
             $collabStmt->bind_param("ii", $thesis_id, $user_id);
             $collabStmt->execute();
             $collabStmt->close();
             
-            // Update invitation status in notification
             $updateNotif = $conn->prepare("UPDATE notifications SET is_read = 1 WHERE notification_id = ?");
             $updateNotif->bind_param("i", $notif_id);
             $updateNotif->execute();
             $updateNotif->close();
             
-            // Create notification for project owner
             $ownerQuery = "SELECT student_id FROM thesis_table WHERE thesis_id = ?";
             $ownerStmt = $conn->prepare($ownerQuery);
             $ownerStmt->bind_param("i", $thesis_id);

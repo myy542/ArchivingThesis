@@ -4,35 +4,25 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
-// Adjust path based on your file structure
-require_once dirname(__DIR__) . '/phpmailer/src/Exception.php';
-require_once dirname(__DIR__) . '/phpmailer/src/PHPMailer.php';
-require_once dirname(__DIR__) . '/phpmailer/src/SMTP.php';
+require_once __DIR__ . '/../phpmailer/src/Exception.php';
+require_once __DIR__ . '/../phpmailer/src/PHPMailer.php';
+require_once __DIR__ . '/../phpmailer/src/SMTP.php';
 
 function sendOTPEmail($to_email, $to_name, $otp) {
     $mail = new PHPMailer(true);
     
     try {
-        // Server settings - GAMIT ANG GMAIL
+        // Server settings
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'your-email@gmail.com';  // CHANGE THIS TO YOUR EMAIL
-        $mail->Password   = 'your-app-password';     // CHANGE THIS TO YOUR APP PASSWORD
+        $mail->Username   = 'mylenesellar13@gmail.com';
+        $mail->Password   = 'nxsrrpkdrvzjtgzi';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         
-        // Optional: Disable SSL verification for testing (remove in production)
-        $mail->SMTPOptions = array(
-            'ssl' => array(
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-                'allow_self_signed' => true
-            )
-        );
-        
         // Recipients
-        $mail->setFrom('your-email@gmail.com', 'Thesis Management System');
+        $mail->setFrom('mylenesellar13@gmail.com', 'Thesis Management System');
         $mail->addAddress($to_email, $to_name);
         
         // Content
@@ -75,8 +65,6 @@ function sendOTPEmail($to_email, $to_name, $otp) {
         $mail->send();
         return true;
     } catch (Exception $e) {
-        // Log error for debugging
-        error_log("Mail Error: " . $mail->ErrorInfo);
         return false;
     }
 }

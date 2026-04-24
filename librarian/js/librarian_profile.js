@@ -1,108 +1,70 @@
-// Librarian Profile Page JavaScript
+// DOM Elements
+const hamburgerBtn = document.getElementById('hamburgerBtn');
+const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+const profileWrapper = document.getElementById('profileWrapper');
+const profileDropdown = document.getElementById('profileDropdown');
+const darkModeToggle = document.getElementById('darkmode');
 
-document.addEventListener('DOMContentLoaded', function() {
-    // Sidebar elements
-    const hamburger = document.getElementById('hamburgerBtn');
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-    
-    // Profile elements
-    const profileWrapper = document.getElementById('profileWrapper');
-    const profileDropdown = document.getElementById('profileDropdown');
-    
-    // Theme toggle
-    const darkmodeToggle = document.getElementById('darkmode');
-    
-    // Open sidebar function
-    function openSidebar() {
-        if (sidebar) sidebar.classList.add('open');
-        if (overlay) overlay.classList.add('active');
-        document.body.style.overflow = 'hidden';
+// Sidebar Functions
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function toggleSidebar(e) {
+    e.stopPropagation();
+    if (sidebar.classList.contains('open')) closeSidebar();
+    else openSidebar();
+}
+
+if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
+
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (sidebar.classList.contains('open')) closeSidebar();
+        if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
     }
-    
-    // Close sidebar function
-    function closeSidebar() {
-        if (sidebar) sidebar.classList.remove('open');
-        if (overlay) overlay.classList.remove('active');
-        document.body.style.overflow = '';
+});
+
+// Close sidebar on window resize
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+});
+
+// Profile Dropdown
+function toggleProfileDropdown(e) {
+    e.stopPropagation();
+    profileDropdown.classList.toggle('show');
+}
+
+function closeProfileDropdown(e) {
+    if (!profileWrapper.contains(e.target)) profileDropdown.classList.remove('show');
+}
+
+if (profileWrapper) {
+    profileWrapper.addEventListener('click', toggleProfileDropdown);
+    document.addEventListener('click', closeProfileDropdown);
+}
+
+// Dark Mode
+function initDarkMode() {
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) {
+        document.body.classList.add('dark-mode');
+        if (darkModeToggle) darkModeToggle.checked = true;
     }
-    
-    // Toggle sidebar function
-    function toggleSidebar(e) {
-        if (e) e.stopPropagation();
-        if (sidebar && sidebar.classList.contains('open')) {
-            closeSidebar();
-        } else {
-            openSidebar();
-        }
-    }
-    
-    // Sidebar event listeners
-    if (hamburger) {
-        hamburger.addEventListener('click', toggleSidebar);
-    }
-    
-    if (overlay) {
-        overlay.addEventListener('click', closeSidebar);
-    }
-    
-    // Profile dropdown toggle
-    if (profileWrapper && profileDropdown) {
-        profileWrapper.addEventListener('click', function(e) {
-            e.stopPropagation();
-            profileDropdown.classList.toggle('show');
-        });
-        
-        document.addEventListener('click', function(e) {
-            if (profileDropdown.classList.contains('show') && 
-                !profileWrapper.contains(e.target)) {
-                profileDropdown.classList.remove('show');
-            }
-        });
-    }
-    
-    // Close sidebar with Escape key
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-            if (sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
-            }
-            if (profileDropdown && profileDropdown.classList.contains('show')) {
-                profileDropdown.classList.remove('show');
-            }
-        }
-    });
-    
-    // Handle window resize
-    let resizeTimer;
-    window.addEventListener('resize', function() {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(function() {
-            if (window.innerWidth > 768 && sidebar && sidebar.classList.contains('open')) {
-                closeSidebar();
-            }
-        }, 250);
-    });
-    
-    // Close sidebar when clicking sidebar links on mobile
-    const sideNavLinks = document.querySelectorAll('.nav-item');
-    sideNavLinks.forEach(link => {
-        link.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
-                closeSidebar();
-            }
-        });
-    });
-    
-    // Dark mode toggle
-    if (darkmodeToggle) {
-        // Load saved preference
-        if (localStorage.getItem('darkMode') === 'true') {
-            document.body.classList.add('dark-mode');
-            darkmodeToggle.checked = true;
-        }
-        
-        darkmodeToggle.addEventListener('change', function() {
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', function() {
             if (this.checked) {
                 document.body.classList.add('dark-mode');
                 localStorage.setItem('darkMode', 'true');
@@ -112,12 +74,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
-    // Notification click
-    const notificationIcon = document.querySelector('.notification-icon');
-    if (notificationIcon) {
-        notificationIcon.addEventListener('click', function() {
-            window.location.href = 'notifications.php';
-        });
-    }
+}
+
+// Auto-hide alerts
+const alerts = document.querySelectorAll('.message');
+alerts.forEach(alert => {
+    setTimeout(() => {
+        alert.style.opacity = '0';
+        setTimeout(() => {
+            if (alert.parentNode) alert.remove();
+        }, 300);
+    }, 5000);
 });
+
+// Initialize
+function init() {
+    initDarkMode();
+    console.log('Librarian Profile Page Initialized');
+}
+
+init();

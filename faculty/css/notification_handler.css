@@ -1,0 +1,19 @@
+/* Notification Handler - Minimal styles for JSON responses */
+/* No CSS needed for this file as it handles JSON responses only */
+/* This file exists for consistency in file structure */
+
+/* Optional loading indicator */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #dc2626;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

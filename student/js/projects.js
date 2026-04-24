@@ -1,110 +1,98 @@
-document.addEventListener('DOMContentLoaded', function() {
-  // Check if there's a thesis_id in the URL
-  const urlParams = new URLSearchParams(window.location.search);
-  const thesisId = urlParams.get('thesis_id');
-  
-  // If thesis_id exists, scroll to that project
-  if (thesisId) {
-    const projectCard = document.getElementById('project-' + thesisId);
-    
-    if (projectCard) {
-      // Scroll to the project smoothly
-      projectCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Add highlight class
-      projectCard.classList.add('highlight');
-      
-      // Remove highlight after 2 seconds
-      setTimeout(() => {
-        projectCard.classList.remove('highlight');
-      }, 2000);
-    }
-  }
-});
-
-// Mobile menu toggle
-const mobileBtn = document.getElementById('mobileMenuBtn');
-const sidebar = document.getElementById('sidebar');
-const overlay = document.getElementById('overlay');
+// DOM Elements
 const hamburgerBtn = document.getElementById('hamburgerBtn');
+const sidebar = document.getElementById('sidebar');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+const profileWrapper = document.getElementById('profileWrapper');
+const profileDropdown = document.getElementById('profileDropdown');
+const darkModeToggle = document.getElementById('darkmode');
+const notificationIcon = document.getElementById('notificationIcon');
 
-function toggleSidebar() {
-  sidebar.classList.toggle('show');
-  overlay.classList.toggle('show');
-  
-  const mobileIcon = mobileBtn?.querySelector('i');
-  const hamburgerIcon = hamburgerBtn?.querySelector('i');
-  
-  if (sidebar.classList.contains('show')) {
-    if (mobileIcon) {
-      mobileIcon.classList.remove('fa-bars');
-      mobileIcon.classList.add('fa-times');
-    }
-    if (hamburgerIcon) {
-      hamburgerIcon.classList.remove('fa-bars');
-      hamburgerIcon.classList.add('fa-times');
-    }
-  } else {
-    if (mobileIcon) {
-      mobileIcon.classList.remove('fa-times');
-      mobileIcon.classList.add('fa-bars');
-    }
-    if (hamburgerIcon) {
-      hamburgerIcon.classList.remove('fa-times');
-      hamburgerIcon.classList.add('fa-bars');
-    }
-  }
+// Sidebar Functions
+function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
 }
 
-if (mobileBtn) mobileBtn.addEventListener('click', toggleSidebar);
+function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
+
+function toggleSidebar(e) {
+    e.stopPropagation();
+    if (sidebar.classList.contains('open')) {
+        closeSidebar();
+    } else {
+        openSidebar();
+    }
+}
+
 if (hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeSidebar);
 
-if (overlay) {
-  overlay.addEventListener('click', function() {
-    sidebar.classList.remove('show');
-    overlay.classList.remove('show');
-    
-    const mobileIcon = mobileBtn?.querySelector('i');
-    const hamburgerIcon = hamburgerBtn?.querySelector('i');
-    
-    if (mobileIcon) {
-      mobileIcon.classList.remove('fa-times');
-      mobileIcon.classList.add('fa-bars');
+// Escape key handler
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (sidebar.classList.contains('open')) closeSidebar();
+        if (profileDropdown && profileDropdown.classList.contains('show')) profileDropdown.classList.remove('show');
     }
-    if (hamburgerIcon) {
-      hamburgerIcon.classList.remove('fa-times');
-      hamburgerIcon.classList.add('fa-bars');
-    }
-  });
+});
+
+// Close sidebar on window resize
+window.addEventListener('resize', function() {
+    if (window.innerWidth > 768 && sidebar.classList.contains('open')) closeSidebar();
+});
+
+// Profile Dropdown
+function toggleProfileDropdown(e) {
+    e.stopPropagation();
+    profileDropdown.classList.toggle('show');
 }
 
-const navLinks = document.querySelectorAll('.nav-link');
-navLinks.forEach(link => {
-  link.addEventListener('click', function() {
-    if (window.innerWidth <= 768) {
-      sidebar.classList.remove('show');
-      overlay.classList.remove('show');
-      
-      const mobileIcon = mobileBtn?.querySelector('i');
-      const hamburgerIcon = hamburgerBtn?.querySelector('i');
-      
-      if (mobileIcon) {
-        mobileIcon.classList.remove('fa-times');
-        mobileIcon.classList.add('fa-bars');
-      }
-      if (hamburgerIcon) {
-        hamburgerIcon.classList.remove('fa-times');
-        hamburgerIcon.classList.add('fa-bars');
-      }
+function closeProfileDropdown(e) {
+    if (!profileWrapper.contains(e.target)) {
+        profileDropdown.classList.remove('show');
     }
-  });
-});
+}
 
-// Confirm archive action
-document.querySelectorAll('a[href*="archive_thesis.php"]').forEach(link => {
-  link.addEventListener('click', function(e) {
-    if (!confirm('Archive this thesis?')) {
-      e.preventDefault();
+if (profileWrapper) {
+    profileWrapper.addEventListener('click', toggleProfileDropdown);
+    document.addEventListener('click', closeProfileDropdown);
+}
+
+// Notification Click
+if (notificationIcon) {
+    notificationIcon.addEventListener('click', function() {
+        window.location.href = 'notification.php';
+    });
+}
+
+// Dark Mode
+function initDarkMode() {
+    const isDark = localStorage.getItem('darkMode') === 'true';
+    if (isDark) {
+        document.body.classList.add('dark-mode');
+        if (darkModeToggle) darkModeToggle.checked = true;
     }
-  });
-});
+    if (darkModeToggle) {
+        darkModeToggle.addEventListener('change', function() {
+            if (this.checked) {
+                document.body.classList.add('dark-mode');
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                document.body.classList.remove('dark-mode');
+                localStorage.setItem('darkMode', 'false');
+            }
+        });
+    }
+}
+
+// Initialize
+function init() {
+    initDarkMode();
+    console.log('Profile Page Initialized');
+}
+
+init();

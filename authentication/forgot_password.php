@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['send_otp'])) {
     if (empty($email)) {
         $error = "Please enter your email address.";
     } else {
-        // Check if email exists in user_table
+        // Check if email exists
         $check_query = "SELECT user_id, first_name, last_name, email FROM user_table WHERE email = ?";
         $check_stmt = $conn->prepare($check_query);
         $check_stmt->bind_param("s", $email);
@@ -27,11 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['send_otp'])) {
         $check_stmt->close();
         
         if ($user) {
-            // Generate 6-digit OTP
+            // Generate OTP
             $otp = sprintf("%06d", mt_rand(1, 999999));
+            
+            // Use PHP time for expiration (para sure)
             $expires_at = date('Y-m-d H:i:s', strtotime('+15 minutes'));
             
-            // Create password_resets table if not exists
+            // Create table if not exists
             $conn->query("CREATE TABLE IF NOT EXISTS password_resets (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 email VARCHAR(100) NOT NULL,
@@ -55,17 +57,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['send_otp'])) {
             $insert_stmt->execute();
             $insert_stmt->close();
             
-            // Send email using PHPMailer
+            // Send email
             $email_sent = sendOTPEmail($email, $user['first_name'] . ' ' . $user['last_name'], $otp);
             
             if ($email_sent) {
                 $_SESSION['reset_email'] = $email;
                 $_SESSION['reset_otp'] = $otp;
                 $_SESSION['otp_sent'] = true;
+                $_SESSION['otp_expires'] = $expires_at;
                 header("Location: forgot_password.php?step=verify");
                 exit;
             } else {
-                $error = "Failed to send OTP. Please check your email address or try again later.";
+                $error = "Failed to send OTP. Please try again later.";
             }
         } else {
             $error = "Email address not found in our records.";
@@ -82,7 +85,7 @@ if (isset($_POST['verify_otp']) && isset($_SESSION['reset_email'])) {
         $error = "Please enter the OTP code.";
     } else {
         // Check OTP in database
-        $check_query = "SELECT * FROM password_resets WHERE email = ? AND otp = ? AND expires_at > NOW() AND is_used = 0";
+        $check_query = "SELECT * FROM password_resets WHERE email = ? AND otp = ? AND is_used = 0 ORDER BY id DESC LIMIT 1";
         $check_stmt = $conn->prepare($check_query);
         $check_stmt->bind_param("ss", $email, $otp_entered);
         $check_stmt->execute();
@@ -90,19 +93,41 @@ if (isset($_POST['verify_otp']) && isset($_SESSION['reset_email'])) {
         $reset_data = $result->fetch_assoc();
         $check_stmt->close();
         
-        if ($reset_data) {
-            // Mark OTP as used
-            $update_query = "UPDATE password_resets SET is_used = 1 WHERE id = ?";
-            $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("i", $reset_data['id']);
-            $update_stmt->execute();
-            $update_stmt->close();
+        // Debug: I-print ang data from database
+        if (!$reset_data) {
+            // Check again without OTP to see if email exists
+            $check_email_query = "SELECT * FROM password_resets WHERE email = ? ORDER BY id DESC LIMIT 1";
+            $check_email_stmt = $conn->prepare($check_email_query);
+            $check_email_stmt->bind_param("s", $email);
+            $check_email_stmt->execute();
+            $email_result = $check_email_stmt->get_result();
+            $last_record = $email_result->fetch_assoc();
+            $check_email_stmt->close();
             
-            $_SESSION['reset_verified'] = true;
-            header("Location: forgot_password.php?step=reset");
-            exit;
+            if ($last_record) {
+                $error = "Invalid OTP. Your OTP is: " . $last_record['otp'] . " (for testing). Please enter this exact code.";
+            } else {
+                $error = "No OTP found for this email. Please request a new one.";
+            }
+        } elseif ($reset_data) {
+            // Check if expired
+            $now = date('Y-m-d H:i:s');
+            if ($reset_data['expires_at'] < $now) {
+                $error = "OTP has expired (expired at: " . $reset_data['expires_at'] . "). Please request a new one.";
+            } else {
+                // Mark OTP as used
+                $update_query = "UPDATE password_resets SET is_used = 1 WHERE id = ?";
+                $update_stmt = $conn->prepare($update_query);
+                $update_stmt->bind_param("i", $reset_data['id']);
+                $update_stmt->execute();
+                $update_stmt->close();
+                
+                $_SESSION['reset_verified'] = true;
+                header("Location: forgot_password.php?step=reset");
+                exit;
+            }
         } else {
-            $error = "Invalid or expired OTP. Please request a new one.";
+            $error = "Invalid OTP. Please try again.";
         }
     }
 }
@@ -132,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['reset_password']) && i
             unset($_SESSION['reset_otp']);
             unset($_SESSION['reset_verified']);
             unset($_SESSION['otp_sent']);
+            unset($_SESSION['otp_expires']);
             
             $message = "Password reset successfully! You can now login with your new password.";
             $step = 'success';
@@ -173,10 +199,12 @@ if (isset($_GET['resend']) && isset($_SESSION['reset_email'])) {
     
     if ($email_sent) {
         $_SESSION['reset_otp'] = $otp;
+        $_SESSION['otp_expires'] = $expires_at;
         header("Location: forgot_password.php?step=verify");
         exit;
     } else {
         $error = "Failed to resend OTP. Please try again.";
+        $step = 'verify';
     }
 }
 
@@ -191,200 +219,8 @@ $pageTitle = "Forgot Password";
     <title><?= $pageTitle ?> | Thesis Management System</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .forgot-container {
-            max-width: 450px;
-            width: 100%;
-        }
-
-        .forgot-card {
-            background: white;
-            border-radius: 24px;
-            padding: 40px;
-            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.1);
-            border: 1px solid #ffcdd2;
-        }
-
-        .logo {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .logo h1 {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #991b1b;
-        }
-
-        .logo span {
-            color: #dc2626;
-        }
-
-        .logo p {
-            color: #6b7280;
-            font-size: 0.85rem;
-            margin-top: 5px;
-        }
-
-        h2 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #991b1b;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #6b7280;
-            font-size: 0.85rem;
-            margin-bottom: 30px;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: #9ca3af;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 1px solid #ffcdd2;
-            border-radius: 12px;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #dc2626;
-            box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
-        }
-
-        .input-icon {
-            position: relative;
-        }
-
-        .input-icon i {
-            position: absolute;
-            left: 16px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #9ca3af;
-        }
-
-        .input-icon input {
-            padding-left: 45px;
-        }
-
-        .otp-input {
-            text-align: center;
-            font-size: 1.5rem;
-            letter-spacing: 5px;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 12px;
-            background: #dc2626;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn:hover {
-            background: #991b1b;
-            transform: translateY(-2px);
-        }
-
-        .back-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            color: #6b7280;
-            text-decoration: none;
-            font-size: 0.85rem;
-        }
-
-        .back-link:hover {
-            color: #dc2626;
-        }
-
-        .alert {
-            padding: 12px 16px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 0.85rem;
-        }
-
-        .alert-success {
-            background: #e8f5e9;
-            color: #2e7d32;
-            border: 1px solid #a5d6a7;
-        }
-
-        .alert-error {
-            background: #fee2e2;
-            color: #b91c1c;
-            border: 1px solid #fecaca;
-        }
-
-        .alert i {
-            font-size: 1rem;
-        }
-
-        .resend-link {
-            text-align: center;
-            margin-top: 15px;
-        }
-
-        .resend-link a {
-            color: #dc2626;
-            text-decoration: none;
-            font-size: 0.8rem;
-        }
-
-        .resend-link a:hover {
-            text-decoration: underline;
-        }
-
-        hr {
-            margin: 20px 0;
-            border-color: #ffcdd2;
-        }
-    </style>
+    <!-- External CSS -->
+    <link rel="stylesheet" href="css/forgot_password.css">
 </head>
 <body>
     <div class="forgot-container">
@@ -405,12 +241,12 @@ $pageTitle = "Forgot Password";
                     </div>
                 <?php endif; ?>
                 
-                <form method="POST" action="">
+                <form method="POST" action="" id="requestForm">
                     <div class="form-group">
                         <label>Email Address</label>
                         <div class="input-icon">
                             <i class="fas fa-envelope"></i>
-                            <input type="email" name="email" placeholder="your-email@example.com" value="<?= htmlspecialchars($email) ?>" required>
+                            <input type="email" name="email" id="email" placeholder="your-email@example.com" value="<?= htmlspecialchars($email) ?>" required>
                         </div>
                     </div>
                     <button type="submit" name="send_otp" class="btn">
@@ -434,12 +270,12 @@ $pageTitle = "Forgot Password";
                     </div>
                 <?php endif; ?>
                 
-                <form method="POST" action="">
+                <form method="POST" action="" id="verifyForm">
                     <div class="form-group">
                         <label>OTP Code</label>
                         <div class="input-icon">
                             <i class="fas fa-key"></i>
-                            <input type="text" name="otp" placeholder="Enter 6-digit OTP" maxlength="6" class="otp-input" required>
+                            <input type="text" name="otp" id="otp" placeholder="Enter 6-digit OTP" maxlength="6" class="otp-input" required>
                         </div>
                     </div>
                     <button type="submit" name="verify_otp" class="btn">
@@ -467,19 +303,19 @@ $pageTitle = "Forgot Password";
                     </div>
                 <?php endif; ?>
                 
-                <form method="POST" action="">
+                <form method="POST" action="" id="resetForm">
                     <div class="form-group">
                         <label>New Password</label>
                         <div class="input-icon">
                             <i class="fas fa-lock"></i>
-                            <input type="password" name="new_password" placeholder="Enter new password (min. 6 characters)" required>
+                            <input type="password" name="new_password" id="new_password" placeholder="Enter new password (min. 6 characters)" required>
                         </div>
                     </div>
                     <div class="form-group">
                         <label>Confirm Password</label>
                         <div class="input-icon">
                             <i class="fas fa-check-circle"></i>
-                            <input type="password" name="confirm_password" placeholder="Confirm your new password" required>
+                            <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm your new password" required>
                         </div>
                     </div>
                     <button type="submit" name="reset_password" class="btn">
@@ -504,5 +340,17 @@ $pageTitle = "Forgot Password";
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Pass PHP variables to JavaScript -->
+    <script>
+        window.stepData = {
+            step: '<?php echo $step; ?>',
+            hasError: <?php echo !empty($error) ? 'true' : 'false'; ?>,
+            error: '<?php echo addslashes($error); ?>'
+        };
+    </script>
+    
+    <!-- External JavaScript -->
+    <script src="js/forgot_password.js"></script>
 </body>
-</html>
+</html>X

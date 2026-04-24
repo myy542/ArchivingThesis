@@ -21,6 +21,26 @@ if ($user_id) {
 
 $pageTitle = "About Us";
 $is_logged_in = isset($_SESSION['user_id']);
+
+// Get user role and dashboard link if logged in
+$dashboardLink = '#';
+if ($is_logged_in) {
+    $roleQuery = "SELECT role_id FROM user_table WHERE user_id = ? LIMIT 1";
+    $stmt = $conn->prepare($roleQuery);
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $userRole = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    
+    if ($userRole) {
+        if ($userRole['role_id'] == 3) $dashboardLink = '../faculty/facultyDashboard.php';
+        elseif ($userRole['role_id'] == 2) $dashboardLink = '../student/student_dashboard.php';
+        elseif ($userRole['role_id'] == 1) $dashboardLink = '../admin/admindashboard.php';
+        elseif ($userRole['role_id'] == 6) $dashboardLink = '../coordinator/coordinatorDashboard.php';
+        elseif ($userRole['role_id'] == 4) $dashboardLink = '../departmentDeanDashboard/dean.php';
+        elseif ($userRole['role_id'] == 5) $dashboardLink = '../librarian/librarian_dashboard.php';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -30,532 +50,32 @@ $is_logged_in = isset($_SESSION['user_id']);
     <title>About Us - Web-Based Thesis Archiving System</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: #fef2f2;
-            color: #1f2937;
-        }
-
-        body.dark-mode {
-            background: #0f172a;
-            color: #e5e7eb;
-        }
-
-        /* Top Navigation - RED BACKGROUND */
-        .top-nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 100%);
-            padding: 0.8rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            z-index: 100;
-            border-bottom: none;
-            flex-wrap: wrap;
-        }
-
-        body.dark-mode .top-nav {
-            background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 100%);
-        }
-
-        .logo {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: white;
-            text-decoration: none;
-        }
-
-        .logo span {
-            color: #ffcdd2;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 2rem;
-            list-style: none;
-        }
-
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            font-weight: 500;
-            transition: 0.3s;
-            opacity: 0.9;
-        }
-
-        .nav-links a:hover {
-            opacity: 1;
-            transform: translateY(-2px);
-        }
-
-        .nav-right {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .profile-wrapper {
-            position: relative;
-        }
-
-        .profile-trigger {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            cursor: pointer;
-            padding: 5px 10px;
-            border-radius: 40px;
-            transition: background 0.3s;
-        }
-
-        .profile-trigger:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .profile-name {
-            font-weight: 500;
-            color: white;
-        }
-
-        .profile-avatar {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-        }
-
-        .profile-dropdown {
-            position: absolute;
-            top: 55px;
-            right: 0;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-            min-width: 200px;
-            display: none;
-            overflow: hidden;
-            z-index: 1000;
-            border: 1px solid #ffcdd2;
-        }
-
-        body.dark-mode .profile-dropdown {
-            background: #1e293b;
-            border-color: #334155;
-        }
-
-        .profile-dropdown.show {
-            display: block;
-            animation: fadeIn 0.2s ease;
-        }
-
-        .profile-dropdown a {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            color: #1f2937;
-            text-decoration: none;
-            transition: background 0.2s;
-        }
-
-        body.dark-mode .profile-dropdown a {
-            color: #e5e7eb;
-        }
-
-        .profile-dropdown a:hover {
-            background: #ffebee;
-        }
-
-        .profile-dropdown hr {
-            margin: 0;
-            border-color: #ffcdd2;
-        }
-
-        /* Main Content */
-        .main-content {
-            margin-top: 80px;
-            padding: 40px 30px;
-            max-width: 1200px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        /* Hero Section */
-        .about-hero {
-            background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 100%);
-            border-radius: 24px;
-            padding: 50px 40px;
-            text-align: center;
-            color: white;
-            margin-bottom: 50px;
-        }
-
-        .about-hero h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-bottom: 20px;
-        }
-
-        .about-hero p {
-            font-size: 1.1rem;
-            opacity: 0.95;
-            max-width: 800px;
-            margin: 0 auto;
-            line-height: 1.6;
-        }
-
-        /* Content Sections */
-        .content-section {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            margin-bottom: 40px;
-            border: 1px solid #ffcdd2;
-        }
-
-        body.dark-mode .content-section {
-            background: #1e293b;
-            border-color: #334155;
-        }
-
-        .section-title {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #d32f2f;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .section-title i {
-            font-size: 2rem;
-        }
-
-        .section-text {
-            color: #4b5563;
-            line-height: 1.8;
-            font-size: 1rem;
-            margin-bottom: 20px;
-        }
-
-        body.dark-mode .section-text {
-            color: #cbd5e1;
-        }
-
-        /* Features Grid */
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px;
-            margin-top: 20px;
-        }
-
-        .feature-box {
-            background: #fef2f2;
-            border-radius: 16px;
-            padding: 25px;
-            text-align: center;
-            transition: all 0.3s;
-        }
-
-        body.dark-mode .feature-box {
-            background: #334155;
-        }
-
-        .feature-box:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(211, 47, 47, 0.15);
-        }
-
-        .feature-box i {
-            font-size: 2.5rem;
-            color: #d32f2f;
-            margin-bottom: 15px;
-        }
-
-        .feature-box h3 {
-            font-size: 1.2rem;
-            margin-bottom: 10px;
-            color: #1f2937;
-        }
-
-        body.dark-mode .feature-box h3 {
-            color: #e5e7eb;
-        }
-
-        .feature-box p {
-            color: #6b7280;
-            font-size: 0.9rem;
-            line-height: 1.5;
-        }
-
-        body.dark-mode .feature-box p {
-            color: #94a3b8;
-        }
-
-        /* Users Grid */
-        .users-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 25px;
-            margin-top: 20px;
-        }
-
-        .user-card {
-            background: #fef2f2;
-            border-radius: 16px;
-            padding: 25px;
-            text-align: center;
-            transition: all 0.3s;
-        }
-
-        body.dark-mode .user-card {
-            background: #334155;
-        }
-
-        .user-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .user-icon {
-            width: 70px;
-            height: 70px;
-            background: linear-gradient(135deg, #b71c1c 0%, #d32f2f 100%);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 15px;
-            color: white;
-            font-size: 1.8rem;
-        }
-
-        .user-card h3 {
-            font-size: 1.1rem;
-            margin-bottom: 8px;
-            color: #1f2937;
-        }
-
-        body.dark-mode .user-card h3 {
-            color: #e5e7eb;
-        }
-
-        .user-card p {
-            color: #6b7280;
-            font-size: 0.85rem;
-            line-height: 1.4;
-        }
-
-        body.dark-mode .user-card p {
-            color: #94a3b8;
-        }
-
-        /* Workflow */
-        .workflow-steps {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .workflow-step {
-            flex: 1;
-            min-width: 150px;
-            text-align: center;
-            position: relative;
-        }
-
-        .step-number {
-            width: 40px;
-            height: 40px;
-            background: #d32f2f;
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            margin: 0 auto 15px;
-        }
-
-        .workflow-step h4 {
-            margin-bottom: 8px;
-            color: #1f2937;
-        }
-
-        body.dark-mode .workflow-step h4 {
-            color: #e5e7eb;
-        }
-
-        .workflow-step p {
-            font-size: 0.8rem;
-            color: #6b7280;
-        }
-
-        body.dark-mode .workflow-step p {
-            color: #94a3b8;
-        }
-
-        /* Stats */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .stat-box {
-            background: #fef2f2;
-            border-radius: 16px;
-            padding: 25px;
-            text-align: center;
-        }
-
-        body.dark-mode .stat-box {
-            background: #334155;
-        }
-
-        .stat-box h3 {
-            font-size: 2rem;
-            font-weight: 800;
-            color: #d32f2f;
-            margin-bottom: 5px;
-        }
-
-        .stat-box p {
-            color: #6b7280;
-            font-size: 0.9rem;
-        }
-
-        /* Footer */
-        footer {
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 2rem;
-            text-align: center;
-            margin-top: 40px;
-        }
-
-        body.dark-mode footer {
-            background: #0f172a;
-        }
-
-        footer p {
-            margin: 0.5rem 0;
-        }
-
-        footer a {
-            color: #fbbf24;
-            text-decoration: none;
-        }
-
-        footer a:hover {
-            text-decoration: underline;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .top-nav {
-                padding: 0.6rem 1rem;
-                flex-direction: column;
-                gap: 10px;
-            }
-            
-            .nav-links {
-                flex-wrap: wrap;
-                justify-content: center;
-                gap: 1rem;
-            }
-            
-            .main-content {
-                padding: 20px 15px;
-                margin-top: 100px;
-            }
-            
-            .about-hero {
-                padding: 30px 20px;
-            }
-            
-            .about-hero h1 {
-                font-size: 1.8rem;
-            }
-            
-            .section-title {
-                font-size: 1.4rem;
-            }
-            
-            .content-section {
-                padding: 25px;
-            }
-            
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            
-            .profile-name {
-                display: none;
-            }
-            
-            .workflow-steps {
-                flex-direction: column;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .features-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .users-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    <!-- External CSS -->
+    <link rel="stylesheet" href="css/about.css">
 </head>
 <body>
-    <header class="top-nav">
-        <div class="logo">Thesis<span>Manager</span></div>
-        <div class="nav-links">
-            <a href="homepage.php">Home</a>
-            <a href="browse.php">Browse</a>
-            <a href="about.php" style="color: #ffcdd2; font-weight: 600;">About</a>
-            <a href="login.php">Login</a>
-            <a href="register.php">Register</a>
+    <div class="theme-toggle" id="themeToggle"><i class="fas fa-moon"></i></div>
+
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="homepage.php" class="logo">
+                <div class="logo-icon">📚</div>
+                <span>Thesis Archive</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="homepage.php">Home</a></li>
+                <li><a href="browse.php">Browse</a></li>
+                <li><a href="about.php" class="active">About</a></li>
+                <?php if ($is_logged_in): ?>
+                    <li><a href="<?= $dashboardLink ?>">Dashboard</a></li>
+                    <li><a href="../authentication/logout.php">Logout</a></li>
+                <?php else: ?>
+                    <li><a href="login.php">Login</a></li>
+                    <li><a href="register.php">Register</a></li>
+                <?php endif; ?>
+            </ul>
         </div>
-    </header>
+    </nav>
 
     <main class="main-content">
         <!-- Hero Section -->
@@ -774,30 +294,17 @@ $is_logged_in = isset($_SESSION['user_id']);
         </div>
     </main>
 
+    <footer>
+        <p>&copy; 2024 Web-Based Thesis Archiving System. All rights reserved.</p>
+        <p>Empowering academic research through digital preservation</p>
+    </footer>
+
+    <!-- Pass PHP variables to JavaScript -->
     <script>
-        // Profile dropdown
-        const profileWrapper = document.getElementById('profileWrapper');
-        const profileDropdown = document.getElementById('profileDropdown');
-
-        if (profileWrapper && profileDropdown) {
-            profileWrapper.addEventListener('click', function(e) {
-                e.stopPropagation();
-                profileDropdown.classList.toggle('show');
-            });
-
-            document.addEventListener('click', function(e) {
-                if (profileDropdown.classList.contains('show') && 
-                    !profileWrapper.contains(e.target)) {
-                    profileDropdown.classList.remove('show');
-                }
-            });
-        }
-
-        // Dark Mode
-        const darkMode = localStorage.getItem('darkMode') === 'true';
-        if (darkMode) {
-            document.body.classList.add('dark-mode');
-        }
+        window.isLoggedIn = <?php echo $is_logged_in ? 'true' : 'false'; ?>;
     </script>
+    
+    <!-- External JavaScript -->
+    <script src="js/about.js"></script>
 </body>
 </html>

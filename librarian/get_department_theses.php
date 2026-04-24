@@ -2,16 +2,13 @@
 session_start();
 include("../config/db.php");
 
-// Set response header to JSON
 header('Content-Type: application/json');
 
-// Check if user is logged in and is a librarian
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'librarian') {
     echo json_encode(['success' => false, 'message' => 'Unauthorized access']);
     exit;
 }
 
-// Check if department_id is provided
 if (!isset($_GET['dept_id']) || empty($_GET['dept_id'])) {
     echo json_encode(['success' => false, 'message' => 'Department ID is required']);
     exit;
@@ -22,7 +19,6 @@ $dept_id = intval($_GET['dept_id']);
 // Check if theses table exists
 $check_theses = $conn->query("SHOW TABLES LIKE 'theses'");
 if (!$check_theses || $check_theses->num_rows == 0) {
-    // Return sample data if table doesn't exist
     $sample_theses = [
         ['id' => 1, 'title' => 'AI-Powered Thesis Recommendation System', 'student' => 'Maria Santos', 'adviser' => 'Prof. Juan Dela Cruz', 'date' => 'Mar 15, 2026', 'status' => 'Approved'],
         ['id' => 2, 'title' => 'Mobile App for Campus Navigation', 'student' => 'Juan Dela Cruz', 'adviser' => 'Dr. Ana Lopez', 'date' => 'Mar 14, 2026', 'status' => 'Archived'],
@@ -68,7 +64,6 @@ while ($row = $result->fetch_assoc()) {
     ];
 }
 
-// If no theses found, return sample data
 if (empty($theses)) {
     $sample_theses = [
         ['id' => 1, 'title' => 'AI-Powered Thesis Recommendation System', 'student' => 'Maria Santos', 'adviser' => 'Prof. Juan Dela Cruz', 'date' => 'Mar 15, 2026', 'status' => 'Approved'],

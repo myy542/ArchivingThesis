@@ -127,115 +127,56 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 }
 
 $pageTitle = "Edit Profile";
+$conn->close();
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle) ?> - Thesis Management System</title>
-    
-    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    
-    <!-- Custom CSS -->
+    <!-- External CSS -->
     <link rel="stylesheet" href="css/edit_profile.css">
 </head>
 <body>
-    <!-- Overlay for sidebar -->
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    <!-- Top Navigation Bar -->
     <header class="top-nav">
         <div class="nav-left">
-            <button class="hamburger" id="hamburgerBtn" aria-label="Menu">
-                <span></span><span></span><span></span>
-            </button>
+            <button class="hamburger" id="hamburgerBtn" aria-label="Menu"><span></span><span></span><span></span></button>
             <div class="logo">Thesis<span>Manager</span></div>
-            <div class="search-area">
-                <i class="fas fa-search"></i>
-                <input type="text" placeholder="Search...">
-            </div>
+            <div class="search-area"><i class="fas fa-search"></i><input type="text" placeholder="Search..."></div>
         </div>
         <div class="nav-right">
-            <div class="notification-icon">
-                <i class="far fa-bell"></i>
-                <?php if ($notificationCount > 0): ?>
-                    <span class="notification-badge"><?= $notificationCount ?></span>
-                <?php endif; ?>
-            </div>
+            <div class="notification-icon"><i class="far fa-bell"></i><?php if ($notificationCount > 0): ?><span class="notification-badge"><?= $notificationCount ?></span><?php endif; ?></div>
             <div class="profile-wrapper" id="profileWrapper">
-                <div class="profile-trigger">
-                    <span class="profile-name"><?= htmlspecialchars($fullName) ?></span>
-                    <div class="profile-avatar"><?= htmlspecialchars($initials) ?></div>
-                </div>
-                <div class="profile-dropdown" id="profileDropdown">
-                    <a href="librarian_profile.php"><i class="fas fa-user"></i> Profile</a>
-                    <a href="edit_profile.php"><i class="fas fa-edit"></i> Edit Profile</a>
-                    <hr>
-                    <a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a>
-                </div>
+                <div class="profile-trigger"><span class="profile-name"><?= htmlspecialchars($fullName) ?></span><div class="profile-avatar"><?= htmlspecialchars($initials) ?></div></div>
+                <div class="profile-dropdown" id="profileDropdown"><a href="librarian_profile.php"><i class="fas fa-user"></i> Profile</a><a href="edit_profile.php"><i class="fas fa-edit"></i> Edit Profile</a><hr><a href="/ArchivingThesis/authentication/logout.php"><i class="fas fa-sign-out-alt"></i> Logout</a></div>
             </div>
         </div>
     </header>
 
-    <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
-        <div class="logo-container">
-            <div class="logo">Thesis<span>Manager</span></div>
-            <div class="logo-sub">LIBRARIAN</div>
-        </div>
-        
+        <div class="logo-container"><div class="logo">Thesis<span>Manager</span></div><div class="logo-sub">LIBRARIAN</div></div>
         <div class="nav-menu">
-            <a href="librarian_dashboard.php" class="nav-item">
-                <i class="fas fa-th-large"></i>
-                <span>Dashboard</span>
-            </a>
-            <a href="#" class="nav-item">
-                <i class="fas fa-archive"></i>
-                <span>Archive</span>
-            </a>
-            <a href="#" class="nav-item">
-                <i class="fas fa-building"></i>
-                <span>Departments</span>
-            </a>
-            <a href="librarian_profile.php" class="nav-item">
-                <i class="fas fa-user-circle"></i>
-                <span>My Profile</span>
-            </a>
-            <a href="edit_profile.php" class="nav-item active">
-                <i class="fas fa-user-edit"></i>
-                <span>Edit Profile</span>
-            </a>
+            <a href="librarian_dashboard.php" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
+            <a href="#" class="nav-item"><i class="fas fa-archive"></i><span>Archive</span></a>
+            <a href="#" class="nav-item"><i class="fas fa-building"></i><span>Departments</span></a>
+            <a href="librarian_profile.php" class="nav-item"><i class="fas fa-user-circle"></i><span>My Profile</span></a>
+            <a href="edit_profile.php" class="nav-item active"><i class="fas fa-user-edit"></i><span>Edit Profile</span></a>
         </div>
-        
         <div class="nav-footer">
-            <div class="theme-toggle">
-                <input type="checkbox" id="darkmode">
-                <label for="darkmode" class="toggle-label">
-                    <i class="fas fa-sun"></i>
-                    <i class="fas fa-moon"></i>
-                    <span class="slider"></span>
-                </label>
-            </div>
-            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </a>
+            <div class="theme-toggle"><input type="checkbox" id="darkmode"><label for="darkmode" class="toggle-label"><i class="fas fa-sun"></i><i class="fas fa-moon"></i><span class="slider"></span></label></div>
+            <a href="/ArchivingThesis/authentication/logout.php" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </aside>
 
-    <!-- MAIN CONTENT -->
     <main class="main-content">
         <div class="edit-profile-container">
             <?php if (!empty($message)) : ?>
-                <div class="message <?php echo $message_type; ?>">
-                    <i class="fas <?php echo ($message_type === 'success') ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i>
-                    <span><?php echo htmlspecialchars($message); ?></span>
-                </div>
+                <div class="message <?php echo $message_type; ?>"><i class="fas <?php echo ($message_type === 'success') ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i><span><?php echo htmlspecialchars($message); ?></span></div>
             <?php endif; ?>
 
             <div class="edit-profile-card">
@@ -245,76 +186,42 @@ $pageTitle = "Edit Profile";
                 </div>
 
                 <form method="POST" action="">
-                    <!-- Avatar Section -->
                     <div class="avatar-section">
-                        <div class="avatar-large" id="avatarPreview">
-                            <?= htmlspecialchars($initials) ?>
-                        </div>
-                        <button type="button" class="btn-change-avatar" id="changeAvatarBtn">
-                            <i class="fas fa-camera"></i> Change Avatar
-                        </button>
+                        <div class="avatar-large" id="avatarPreview"><?= htmlspecialchars($initials) ?></div>
+                        <button type="button" class="btn-change-avatar" id="changeAvatarBtn"><i class="fas fa-camera"></i> Change Avatar</button>
                         <input type="file" id="avatarInput" accept="image/*" style="display: none;">
                     </div>
 
-                    <!-- Form Fields -->
                     <div class="form-grid">
-                        <div class="form-group">
-                            <label><i class="fas fa-user"></i> First Name <span class="required">*</span></label>
-                            <input type="text" name="first_name" value="<?= htmlspecialchars($first_name) ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label><i class="fas fa-user"></i> Last Name <span class="required">*</span></label>
-                            <input type="text" name="last_name" value="<?= htmlspecialchars($last_name) ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label><i class="fas fa-envelope"></i> Email Address <span class="required">*</span></label>
-                            <input type="email" name="email" value="<?= htmlspecialchars($user_email) ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label><i class="fas fa-user-circle"></i> Username <span class="required">*</span></label>
-                            <input type="text" name="username" value="<?= htmlspecialchars($username) ?>" required>
-                        </div>
-
-                        <div class="form-group">
-                            <label><i class="fas fa-phone"></i> Phone Number</label>
-                            <input type="tel" name="phone" value="<?= htmlspecialchars($user_phone) ?>">
-                        </div>
-
-                        <div class="form-group">
-                            <label><i class="fas fa-building"></i> Role</label>
-                            <input type="text" value="Librarian" disabled readonly>
-                            <small class="help-text">Role cannot be changed</small>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label><i class="fas fa-map-marker-alt"></i> Address</label>
-                            <input type="text" name="address" value="<?= htmlspecialchars($user_address) ?>">
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label><i class="fas fa-info-circle"></i> Bio / About Me</label>
-                            <textarea name="bio" rows="4"><?= htmlspecialchars($user_bio) ?></textarea>
-                            <small class="help-text">Tell us a little about yourself</small>
-                        </div>
+                        <div class="form-group"><label><i class="fas fa-user"></i> First Name <span class="required">*</span></label><input type="text" name="first_name" value="<?= htmlspecialchars($first_name) ?>" required></div>
+                        <div class="form-group"><label><i class="fas fa-user"></i> Last Name <span class="required">*</span></label><input type="text" name="last_name" value="<?= htmlspecialchars($last_name) ?>" required></div>
+                        <div class="form-group"><label><i class="fas fa-envelope"></i> Email Address <span class="required">*</span></label><input type="email" name="email" value="<?= htmlspecialchars($user_email) ?>" required></div>
+                        <div class="form-group"><label><i class="fas fa-user-circle"></i> Username <span class="required">*</span></label><input type="text" name="username" value="<?= htmlspecialchars($username) ?>" required></div>
+                        <div class="form-group"><label><i class="fas fa-phone"></i> Phone Number</label><input type="tel" name="phone" value="<?= htmlspecialchars($user_phone) ?>"></div>
+                        <div class="form-group"><label><i class="fas fa-building"></i> Role</label><input type="text" value="Librarian" disabled readonly><small class="help-text">Role cannot be changed</small></div>
+                        <div class="form-group full-width"><label><i class="fas fa-map-marker-alt"></i> Address</label><input type="text" name="address" value="<?= htmlspecialchars($user_address) ?>"></div>
+                        <div class="form-group full-width"><label><i class="fas fa-info-circle"></i> Bio / About Me</label><textarea name="bio" rows="4"><?= htmlspecialchars($user_bio) ?></textarea><small class="help-text">Tell us a little about yourself</small></div>
                     </div>
 
-                    <!-- Form Actions -->
                     <div class="form-actions">
-                        <a href="librarian_profile.php" class="btn-cancel">
-                            <i class="fas fa-times"></i> Cancel
-                        </a>
-                        <button type="submit" class="btn-save">
-                            <i class="fas fa-save"></i> Save Changes
-                        </button>
+                        <a href="librarian_profile.php" class="btn-cancel"><i class="fas fa-times"></i> Cancel</a>
+                        <button type="submit" class="btn-save"><i class="fas fa-save"></i> Save Changes</button>
                     </div>
                 </form>
             </div>
         </div>
     </main>
 
+    <script>
+        window.userData = {
+            fullName: '<?php echo addslashes($fullName); ?>',
+            initials: '<?php echo addslashes($initials); ?>',
+            email: '<?php echo addslashes($user_email); ?>',
+            notificationCount: <?php echo $notificationCount; ?>
+        };
+    </script>
+    
+    <!-- External JavaScript -->
     <script src="js/edit_profile.js"></script>
 </body>
 </html>
